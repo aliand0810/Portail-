@@ -1628,6 +1628,152 @@ document.getElementById('ceAiAppend').addEventListener('click',()=>{
   toast('Code ajouté','info');
 });
 
+// ══ FEEDBACK ══
+const FBK='portail_feedback_v1';
+function loadFeedbacks(){try{return JSON.parse(localStorage.getItem(FBK))||[]}catch{return[]}}
+function saveFeedbacks(f){localStorage.setItem(FBK,JSON.stringify(f))}
+let feedbacks=loadFeedbacks();
+let fbFilter='tous';
+let fbSelectedType='suggestion';
+
+function fbUserColor(name){
+  const colors=['#c9a84c','#5ab87e','#5b9bd5','#d96c6c','#a07ed1','#d97b3a','#3abcd9'];
+  let h=0;for(let i=0;i<name.length;i++)h=(h*31+name.charCodeAt(i))&0xffff;
+  return colors[h%colors.length];
+}
+function fbInitials(name){return name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2)}
+
+function populateFbUserSelect(){
+  const sel=document.getElementById('fbUserSelect');if(!sel)return;
+  sel.innerHTML='<option value="__admin__">👤 Administrateur</option>';
+  (config.users||[]).forEach(u=>{
+    const o=document.createElement('option');o.value=u.id;o.textContent='👤 '+u.name;sel.appendChild(o);
+  });
+}
+
+function updateFbBadge(){
+  const newCount=feedbacks.filter(f=>f.status==='nouveau').length;
+  const badge=document.getElementById('fbNewBadge');
+  if(!badge)return;
+  if(newCount>0){badge.textContent=newCount;badge.style.display='';}
+  else badge.style.display='none';
+}
+
+function typeLabel(t){const m={suggestion:'💡 Suggestion',bug:'🐛 Problème',amélioration:'⚡ Amélioration',autre:'💬 Autre'};return m[t]||t}
+function statusLabel(s){const m={nouveau:'🔴 Nouveau',lu:'👁️ Lu',traité:'✅ Traité'};return m[s]||s}
+
+function renderFeedbacks(){
+  const list=document.getElementById('fbList'),empty=document.getElementById('fbEmpty'),cnt=document.getElementById('fbCount');
+  if(!list)return;
+  let fb=[...feedbacks].sort((a,b)=>b.created-a.created);
+  if(fbFilter!=='tous')fb=fb.filter(f=>f.status===fbFilter);
+  if(cnt)cnt.textContent=fb.length+' retour'+(fb.length!==1?'s':'');
+  if(!fb.length){list.innerHTML='';if(empty)empty.style.display='block';return}
+  if(empty)empty.style.display='none';list.innerHTML='';
+  fb.forEach(f=>{
+    const color=fbUserColor(f.userName);
+    const bg=hRgba(color,.14);
+    const card=document.createElement('div');card.className='fb-card';card.dataset.id=f.id;
+    card.innerHTML=`
+      <div class="fb-card-head">
+        <div class="fb-avatar" style="background:${bg};color:${color}">${fbInitials(f.userName)}</div>
+        <div class="fb-meta">
+          <div class="fb-author">${esc(f.userName)}</div>
+          <div class="fb-date">${fmtDate(f.created)}</div>
+        </div>
+        <span class="fb-type ${f.type}">${typeLabel(f.type)}</span>
+        <span class="fb-status ${f.status}" title="Cliquer pour changer" data-id="${f.id}">${statusLabel(f.status)}</span>
+      </div>
+      <div class="fb-message">${esc(f.message)}</div>
+      ${f.reply?`<div class="fb-reply"><div class="fb-reply-label">Réponse admin</div>${esc(f.reply)}</div>`:''}
+      <div class="fb-actions">
+        <button class="btn-ghost reply-toggle-btn" data-id="${f.id}" style="font-size:11px;padding:6px 11px">✏️ ${f.reply?'Modifier la réponse':'Répondre'}</button>
+        <button class="btn-danger fb-del-btn" data-id="${f.id}" style="font-size:11px;padding:6px 10px">🗑️</button>
+      </div>
+      <div class="fb-reply-area" id="fbra_${f.id}">
+        <textarea placeholder="Votre réponse…">${esc(f.reply||'')}</textarea>
+        <div class="fb-reply-area-actions">
+          <button class="btn-ghost fbra-cancel" data-id="${f.id}" style="font-size:11px">Annuler</button>
+          <button class="btn-gold fbra-save" data-id="${f.id}" style="font-size:11px">Enregistrer</button>
+        </div>
+      </div>`;
+    list.appendChild(card);
+  });
+
+  list.querySelectorAll('.fb-status').forEach(el=>{
+    el.addEventListener('click',()=>{
+      const id=el.dataset.id,f=feedbacks.find(x=>x.id===id);if(!f)return;
+      const cycle={nouveau:'lu',lu:'traité',traité:'nouveau'};
+      f.status=cycle[f.status]||'nouveau';
+      saveFeedbacks(feedbacks);renderFeedbacks();updateFbBadge();
+    });
+  });
+  list.querySelectorAll('.reply-toggle-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const area=document.getElementById('fbra_'+btn.dataset.id);
+      area.classList.toggle('open');
+      if(area.classList.contains('open'))area.querySelector('textarea').focus();
+    });
+  });
+  list.querySelectorAll('.fbra-cancel').forEach(btn=>{
+    btn.addEventListener('click',()=>document.getElementById('fbra_'+btn.dataset.id).classList.remove('open'));
+  });
+  list.querySelectorAll('.fbra-save').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const id=btn.dataset.id,f=feedbacks.find(x=>x.id===id);if(!f)return;
+      f.reply=document.getElementById('fbra_'+id).querySelector('textarea').value.trim();
+      if(f.status==='nouveau')f.status='lu';
+      saveFeedbacks(feedbacks);renderFeedbacks();updateFbBadge();
+      toast('Réponse enregistrée','info');
+    });
+  });
+  list.querySelectorAll('.fb-del-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      if(!confirm('Supprimer ce retour ?'))return;
+      feedbacks=feedbacks.filter(x=>x.id!==btn.dataset.id);
+      saveFeedbacks(feedbacks);renderFeedbacks();updateFbBadge();
+      toast('Retour supprimé');
+    });
+  });
+}
+
+// Type selector
+document.getElementById('fbTypeRow').addEventListener('click',e=>{
+  const btn=e.target.closest('.fb-type-btn');if(!btn)return;
+  document.querySelectorAll('.fb-type-btn').forEach(b=>b.classList.remove('sel'));
+  btn.classList.add('sel');fbSelectedType=btn.dataset.type;
+});
+
+// Filter buttons
+document.querySelectorAll('.fb-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.fb-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');fbFilter=btn.dataset.fbf;renderFeedbacks();
+  });
+});
+
+// Submit
+document.getElementById('fbSubmitBtn').addEventListener('click',()=>{
+  const msg=document.getElementById('fbMessage').value.trim();
+  if(!msg){toast('Rédigez votre retour avant d\'envoyer','err');return}
+  const selEl=document.getElementById('fbUserSelect');
+  const userId=selEl.value;
+  let userName='Administrateur';
+  if(userId!=='__admin__'){const u=config.users.find(x=>x.id===userId);if(u)userName=u.name;}
+  feedbacks.unshift({id:uid(),userId,userName,type:fbSelectedType,message:msg,status:'nouveau',created:Date.now(),reply:''});
+  saveFeedbacks(feedbacks);
+  document.getElementById('fbMessage').value='';
+  renderFeedbacks();updateFbBadge();
+  toast('✅ Retour envoyé — merci !');
+});
+
+function initFeedbackTab(){
+  feedbacks=loadFeedbacks();
+  populateFbUserSelect();
+  renderFeedbacks();
+  updateFbBadge();
+}
+
 // ══ SAUVEGARDE AUTOMATIQUE DRIVE ══
 // Déclenchée 3s après toute modification de config, notes, snippets ou feedbacks
 let _autoSaveTimer=null;
@@ -1641,14 +1787,14 @@ function triggerAutoSave(){
   },3000);
 }
 
-// Surcharger saveConfig/saveNotes/saveSnippets/saveFeedbacks pour déclencher auto-save
-const _origSaveConfig=saveConfig;
-window.saveConfig=function(c){_origSaveConfig(c);triggerAutoSave();};
-const _origSaveNotes=saveNotes;
-window.saveNotes=function(n){_origSaveNotes(n);triggerAutoSave();};
-// saveSnippets already calls triggerAutoSave via its definition above
-const _origSaveFeedbacks=saveFeedbacks;
-window.saveFeedbacks=function(f){_origSaveFeedbacks(f);triggerAutoSave();};
+// Patch save functions pour déclencher la sauvegarde auto Drive
+(function(){
+  const _oSC=saveConfig, _oSN=saveNotes, _oSF=saveFeedbacks;
+  window.saveConfig  = function(c){_oSC(c);  triggerAutoSave();};
+  window.saveNotes   = function(n){_oSN(n);  triggerAutoSave();};
+  window.saveFeedbacks=function(f){_oSF(f);  triggerAutoSave();};
+  // saveSnippets patché directement dans sa définition
+})();
 
 // ══ GOOGLE DRIVE — Copié depuis COVO Pro ══
 (function(){
@@ -2127,6 +2273,7 @@ window.saveFeedbacks=function(f){_origSaveFeedbacks(f);triggerAutoSave();};
                 if(resp.error){localStorage.removeItem('gdrive_connected');_gdUpdateStatusBar(false);return;}
                 _gdAccessToken=resp.access_token;
                 _gdConnected=true;
+                window._gdConnected=true;
                 _gdUserEmail=localStorage.getItem('gdrive_email')||'';
                 _gdUpdateUI(true);
                 await _gdLoadFolders();
