@@ -205,6 +205,9 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
 .ai-apply.replace:hover{background:rgba(90,184,126,.2)}
 .ai-apply.append{background:var(--info-bg);color:var(--info);border-color:rgba(91,155,213,.25)}
 .ai-apply.append:hover{background:rgba(91,155,213,.2)}
+.ai-model-select{background:rgba(91,155,213,.1);border:1px solid rgba(91,155,213,.25);border-radius:var(--rs);color:var(--info);font-family:'DM Sans',sans-serif;font-size:11px;padding:5px 10px;outline:none;cursor:pointer;transition:border-color .2s;max-width:220px}
+.ai-model-select:hover{border-color:rgba(91,155,213,.45)}
+.ai-model-select option{background:#0d0d18;color:var(--text)}
 .ai-spinner{width:16px;height:16px;border:2px solid rgba(91,155,213,.2);border-top-color:var(--info);border-radius:50%;animation:spin .7s linear infinite;display:none;flex-shrink:0}
 .ai-spinner.on{display:block}
 
@@ -264,6 +267,28 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
 .note-audio-del:hover{opacity:1}
 .note-card-images{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
 .note-card-img{width:36px;height:36px;object-fit:cover;border-radius:5px;border:1px solid var(--border)}
+/* ── MATRICULE ── */
+.note-matricule{font-size:9px;letter-spacing:.12em;font-family:monospace;color:var(--dim);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:2px 6px;border-radius:4px;flex-shrink:0}
+
+/* ── DRAG HANDLE ── */
+.note-drag-handle{cursor:grab;color:var(--dim);font-size:14px;padding:2px 4px;border-radius:4px;transition:color .15s;line-height:1;user-select:none;flex-shrink:0}
+.note-drag-handle:hover{color:var(--muted);background:rgba(255,255,255,.05)}
+.note-card.dragging{opacity:.35;border:2px dashed var(--border2)}
+.note-card.drag-over{border:2px dashed var(--gold);background:var(--gold-dim)}
+
+/* ── PREVIEW MODAL ── */
+#notePreviewModal .note-box{max-width:580px}
+.note-preview-head{padding:1.15rem 1.4rem;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px}
+.note-preview-matricule{font-size:10px;letter-spacing:.14em;font-family:monospace;color:var(--gold);background:var(--gold-dim);border:1px solid rgba(201,168,76,.2);padding:3px 8px;border-radius:6px;flex-shrink:0;margin-top:3px}
+.note-preview-title{font-family:'Cormorant Garamond',serif;font-size:1.4rem;font-weight:400;flex:1;line-height:1.3}
+.note-preview-body{padding:1.15rem 1.4rem;overflow-y:auto;flex:1;font-size:13px;color:var(--muted);line-height:1.8;white-space:pre-wrap;word-break:break-word;min-height:80px}
+.note-preview-footer{padding:.9rem 1.4rem;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.note-preview-meta{font-size:11px;color:var(--dim)}
+.note-preview-images{display:flex;flex-wrap:wrap;gap:8px;padding:0 1.4rem .75rem}
+.note-preview-audios{display:flex;flex-direction:column;gap:6px;padding:0 1.4rem .75rem}
+.note-preview-audio-row{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:var(--rs);padding:7px 10px}
+.note-preview-audio-row audio{flex:1;height:28px;min-width:0}
+
 /* Lightbox */
 .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:600;display:none;align-items:center;justify-content:center;cursor:zoom-out}
 .lightbox.open{display:flex}
@@ -329,7 +354,31 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
   </div>
 </div>
 
-<!-- NOTE MODAL -->
+<!-- NOTE PREVIEW MODAL -->
+<div class="overlay" id="notePreviewModal">
+  <div class="note-box" style="max-height:88vh;display:flex;flex-direction:column">
+    <div class="note-preview-head">
+      <div class="note-preview-matricule" id="pvMatricule">#0001</div>
+      <div>
+        <div class="note-preview-title" id="pvTitle"></div>
+        <div style="margin-top:5px"><span id="pvCat" class="note-cat"></span></div>
+      </div>
+      <button class="btn-ghost" id="pvClose" style="padding:6px 10px;font-size:18px;line-height:1;margin-left:auto;flex-shrink:0">×</button>
+    </div>
+    <div class="note-preview-body" id="pvBody"></div>
+    <div class="note-preview-images" id="pvImages" style="display:none"></div>
+    <div class="note-preview-audios" id="pvAudios" style="display:none"></div>
+    <div class="note-preview-footer">
+      <div class="note-preview-meta" id="pvMeta"></div>
+      <div style="margin-left:auto;display:flex;gap:7px">
+        <button class="btn-ghost" id="pvArchiveBtn">📥 Archiver</button>
+        <button class="btn-gold" id="pvEditBtn">✏️ Modifier</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- NOTE EDIT MODAL -->
 <div class="overlay" id="noteModal">
   <div class="note-box">
     <div class="note-box-head">
@@ -350,9 +399,22 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
       <!-- Audios -->
       <div class="note-audios" id="noteAudios"></div>
       <div class="ai-panel" id="aiPanel">
-        <div class="ai-header">
-          <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
-          Assistant IA — 1min.AI
+        <div class="ai-header" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+            Assistant IA — 1min.AI
+          </div>
+          <select id="aiModelSelect" class="ai-model-select">
+            <option value="gpt-4o-mini">⚡ GPT-4o Mini — rapide &amp; économique</option>
+            <option value="gpt-4o">🧠 GPT-4o — puissant</option>
+            <option value="gpt-4.1-mini">🚀 GPT-4.1 Mini</option>
+            <option value="claude-sonnet-4-5">🔵 Claude Sonnet 4.5</option>
+            <option value="claude-haiku-4-5-20251001">🔵 Claude Haiku 4.5 — rapide</option>
+            <option value="claude-instant-1.2">🔵 Claude Instant 1.2</option>
+            <option value="deepseek-chat">🌐 DeepSeek Chat</option>
+            <option value="gemini-2.0-flash">✳️ Gemini 2.0 Flash</option>
+            <option value="open-mistral-nemo">🔥 Mistral Nemo</option>
+          </select>
         </div>
         <div class="ai-input-row">
           <input type="text" id="aiPrompt" placeholder="Ex: Résume, reformule, traduis, développe cette idée…">
@@ -555,7 +617,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();_pwaPrompt=
 
 // ══ STORAGE ══
 const SK='portail_v3', NK='portail_notes_v1';
-function loadConfig(){try{return JSON.parse(localStorage.getItem(SK))||{adminPwd:'admin123',users:[],apiKey:'',gClientId:'',gApiKey:'',driveFolderId:'',driveFolderName:''}}catch{return{adminPwd:'admin123',users:[],apiKey:'',gClientId:'',gApiKey:'',driveFolderId:'',driveFolderName:''}}}
+function loadConfig(){try{return JSON.parse(localStorage.getItem(SK))||{adminPwd:'admin123',users:[],apiKey:'',gClientId:'',gApiKey:'',driveFolderId:'',driveFolderName:'',aiModel:'gpt-4o-mini',nextMatricule:1}}catch{return{adminPwd:'admin123',users:[],apiKey:'',gClientId:'',gApiKey:'',driveFolderId:'',driveFolderName:'',aiModel:'gpt-4o-mini',nextMatricule:1}}}
 function saveConfig(c){localStorage.setItem(SK,JSON.stringify(c))}
 function loadNotes(){try{return JSON.parse(localStorage.getItem(NK))||[]}catch{return[]}}
 function saveNotes(n){localStorage.setItem(NK,JSON.stringify(n))}
@@ -851,14 +913,26 @@ function renderNotes(){
   const grid=document.getElementById('notesGrid'),empty=document.getElementById('notesEmpty');
   let list=notes.filter(n=>nFilter==='active'?!n.archived:nFilter==='archived'?n.archived:true);
   if(nSearch)list=list.filter(n=>(n.title+n.body).toLowerCase().includes(nSearch));
-  list.sort((a,b)=>b.updated-a.updated);
+  // Respect custom order (pos field), then by updated
+  list.sort((a,b)=>(a.pos??Infinity)-(b.pos??Infinity)||(b.updated-a.updated));
   if(!list.length){grid.innerHTML='';empty.style.display='block';return}
   empty.style.display='none';grid.innerHTML='';
+
+  const isDraggable=!nSearch&&nFilter!=='all';
+  let dragSrc=null;
+
   list.forEach(note=>{
-    const card=document.createElement('div');card.className='note-card'+(note.archived?' archived':'');
+    const mat=note.matricule?String(note.matricule).padStart(4,'0'):'????';
+    const card=document.createElement('div');
+    card.className='note-card'+(note.archived?' archived':'');
+    card.dataset.id=note.id;
+    if(isDraggable){card.draggable=true}
+
     card.innerHTML=`
       <div class="note-card-top">
-        <div class="note-title">${esc(note.title||'Sans titre')}</div>
+        ${isDraggable?'<span class="note-drag-handle" title="Déplacer">⠿</span>':''}
+        <span class="note-matricule">#${mat}</span>
+        <div class="note-title" style="flex:1">${esc(note.title||'Sans titre')}</div>
         <span class="note-cat" style="background:${CAT_BG[note.cat]||CAT_BG.général};color:${CAT_C[note.cat]||CAT_C.général}">${esc(note.cat||'général')}</span>
       </div>
       <div class="note-body">${esc(note.body||'')}</div>
@@ -872,6 +946,12 @@ function renderNotes(){
           <button class="note-action danger" data-action="del" title="Supprimer">🗑️</button>
         </div>
       </div>`;
+
+    // Clic carte → aperçu lecture seule
+    card.addEventListener('click',e=>{
+      if(e.target.closest('.note-action')||e.target.closest('.note-drag-handle'))return;
+      previewNote(note.id);
+    });
     card.querySelector('[data-action="edit"]').addEventListener('click',e=>{e.stopPropagation();openNote(note.id)});
     card.querySelector('[data-action="archive"]').addEventListener('click',e=>{e.stopPropagation();
       const n=notes.find(x=>x.id===note.id);if(!n)return;
@@ -882,10 +962,89 @@ function renderNotes(){
       if(!confirm('Supprimer définitivement ?'))return;
       notes=notes.filter(x=>x.id!==note.id);saveNotes(notes);renderNotes();toast('Note supprimée');
     });
-    card.addEventListener('click',()=>openNote(note.id));
+
+    // Drag & drop
+    if(isDraggable){
+      card.addEventListener('dragstart',e=>{
+        dragSrc=card;card.classList.add('dragging');
+        e.dataTransfer.effectAllowed='move';
+      });
+      card.addEventListener('dragend',()=>{
+        card.classList.remove('dragging');
+        grid.querySelectorAll('.note-card').forEach(c=>c.classList.remove('drag-over'));
+      });
+      card.addEventListener('dragover',e=>{
+        e.preventDefault();e.dataTransfer.dropEffect='move';
+        if(card!==dragSrc){grid.querySelectorAll('.note-card').forEach(c=>c.classList.remove('drag-over'));card.classList.add('drag-over');}
+      });
+      card.addEventListener('drop',e=>{
+        e.preventDefault();
+        if(!dragSrc||dragSrc===card)return;
+        card.classList.remove('drag-over');
+        // Reorder in notes array
+        const srcId=dragSrc.dataset.id,dstId=card.dataset.id;
+        const srcIdx=notes.findIndex(n=>n.id===srcId),dstIdx=notes.findIndex(n=>n.id===dstId);
+        if(srcIdx>-1&&dstIdx>-1){
+          const [moved]=notes.splice(srcIdx,1);
+          notes.splice(dstIdx,0,moved);
+          // Update pos field
+          notes.forEach((n,i)=>n.pos=i);
+          saveNotes(notes);renderNotes();
+        }
+      });
+    }
+
     grid.appendChild(card);
   });
 }
+
+// ── PREVIEW (lecture seule) ──
+function previewNote(id){
+  const n=notes.find(x=>x.id===id);if(!n)return;
+  const mat=n.matricule?String(n.matricule).padStart(4,'0'):'????';
+  document.getElementById('pvMatricule').textContent='#'+mat;
+  document.getElementById('pvTitle').textContent=n.title||'Sans titre';
+  const catEl=document.getElementById('pvCat');
+  catEl.textContent=n.cat||'général';
+  catEl.style.background=CAT_BG[n.cat]||CAT_BG.général;
+  catEl.style.color=CAT_C[n.cat]||CAT_C.général;
+  document.getElementById('pvBody').textContent=n.body||'';
+  document.getElementById('pvMeta').textContent='Créée le '+fmtDate(n.created||n.updated)+' · Modifiée le '+fmtDate(n.updated);
+  document.getElementById('pvArchiveBtn').textContent=n.archived?'📤 Restaurer':'📥 Archiver';
+
+  // Images
+  const pvImgs=document.getElementById('pvImages');
+  if((n.images||[]).length){
+    pvImgs.style.display='flex';pvImgs.innerHTML='';
+    n.images.forEach(src=>{const img=document.createElement('img');img.className='note-img-thumb';img.src=src;img.style.cursor='zoom-in';img.addEventListener('click',()=>openLightbox(src));pvImgs.appendChild(img);});
+  }else{pvImgs.style.display='none';pvImgs.innerHTML='';}
+
+  // Audios
+  const pvAuds=document.getElementById('pvAudios');
+  if((n.audios||[]).length){
+    pvAuds.style.display='flex';pvAuds.innerHTML='';
+    n.audios.forEach(src=>{const row=document.createElement('div');row.className='note-preview-audio-row';const aud=document.createElement('audio');aud.controls=true;aud.src=src;row.appendChild(aud);pvAuds.appendChild(row);});
+  }else{pvAuds.style.display='none';pvAuds.innerHTML='';}
+
+  document.getElementById('notePreviewModal').classList.add('open');
+  // Store id for edit/archive buttons
+  document.getElementById('notePreviewModal').dataset.noteId=id;
+}
+
+document.getElementById('pvClose').addEventListener('click',()=>document.getElementById('notePreviewModal').classList.remove('open'));
+document.getElementById('notePreviewModal').addEventListener('click',e=>{if(e.target===document.getElementById('notePreviewModal'))document.getElementById('notePreviewModal').classList.remove('open')});
+document.getElementById('pvEditBtn').addEventListener('click',()=>{
+  const id=document.getElementById('notePreviewModal').dataset.noteId;
+  document.getElementById('notePreviewModal').classList.remove('open');
+  openNote(id);
+});
+document.getElementById('pvArchiveBtn').addEventListener('click',()=>{
+  const id=document.getElementById('notePreviewModal').dataset.noteId;
+  const n=notes.find(x=>x.id===id);if(!n)return;
+  n.archived=!n.archived;n.updated=Date.now();saveNotes(notes);renderNotes();
+  document.getElementById('notePreviewModal').classList.remove('open');
+  toast(n.archived?'Note archivée':'Note restaurée','info');
+});
 
 function openNote(id){
   curNoteId=id;
@@ -935,7 +1094,15 @@ document.getElementById('noteSaveBtn').addEventListener('click',()=>{
   if(!title&&!body){toast('Note vide','err');return}
   const media=getCurMediaArrays();
   if(curNoteId){const n=notes.find(x=>x.id===curNoteId);if(n){n.title=title;n.body=body;n.cat=cat;n.updated=Date.now();n.images=media.images;n.audios=media.audios}}
-  else{notes.unshift({id:uid(),title,body,cat,created:Date.now(),updated:Date.now(),archived:false,images:_tmpNote.images.slice(),audios:_tmpNote.audios.slice()});_tmpNote={images:[],audios:[]}}
+  else{
+    if(!config.nextMatricule)config.nextMatricule=1;
+    const matricule=config.nextMatricule++;
+    saveConfig(config);
+    notes.unshift({id:uid(),matricule,title,body,cat,created:Date.now(),updated:Date.now(),archived:false,images:_tmpNote.images.slice(),audios:_tmpNote.audios.slice(),pos:0});
+    // Shift existing pos
+    notes.slice(1).forEach((n,i)=>n.pos=i+1);
+    _tmpNote={images:[],audios:[]};
+  }
   saveNotes(notes);renderNotes();document.getElementById('noteModal').classList.remove('open');toast('Note enregistrée');
 });
 document.getElementById('noteArchiveBtn').addEventListener('click',()=>{
@@ -954,7 +1121,12 @@ document.getElementById('noteDeleteBtn').addEventListener('click',()=>{
 // ══ AI 1min.AI ══
 document.getElementById('toggleAiPanel').addEventListener('click',()=>{
   const p=document.getElementById('aiPanel');p.classList.toggle('open');
-  if(p.classList.contains('open'))document.getElementById('aiPrompt').focus();
+  if(p.classList.contains('open')){
+    // Restaurer le modèle préféré
+    const sel=document.getElementById('aiModelSelect');
+    if(sel&&config.aiModel)sel.value=config.aiModel;
+    document.getElementById('aiPrompt').focus();
+  }
 });
 document.getElementById('aiPrompt').addEventListener('keydown',e=>{if(e.key==='Enter')sendAI()});
 document.getElementById('aiSendBtn').addEventListener('click',sendAI);
@@ -967,6 +1139,11 @@ async function sendAI(){
   const noteBody=document.getElementById('noteModalBody').value.trim();
   const fullPrompt=noteBody?`Note:\n"${noteBody}"\n\nInstruction: ${instruction}`:instruction;
 
+  // Récupérer le modèle sélectionné et sauvegarder la préférence
+  const modelSel=document.getElementById('aiModelSelect');
+  const selectedModel=modelSel?modelSel.value:'gpt-4o-mini';
+  config.aiModel=selectedModel;saveConfig(config);
+
   const spinner=document.getElementById('aiSpinner'),sendBtn=document.getElementById('aiSendBtn'),resultEl=document.getElementById('aiResult');
   spinner.classList.add('on');sendBtn.disabled=true;sendBtn.style.opacity='.5';resultEl.classList.remove('visible');
 
@@ -974,9 +1151,12 @@ async function sendAI(){
     const res=await fetch('https://api.1min.ai/api/features',{
       method:'POST',
       headers:{'Content-Type':'application/json','API-KEY':key},
-      body:JSON.stringify({type:'CHAT_WITH_AI',model:'claude-instant-1.2',promptObject:{prompt:fullPrompt,isMixed:false,webSearch:false}})
+      body:JSON.stringify({type:'CHAT_WITH_AI',model:selectedModel,promptObject:{prompt:fullPrompt,isMixed:false,webSearch:false}})
     });
-    if(!res.ok)throw new Error(`Erreur ${res.status}`);
+    if(!res.ok){
+      const errBody=await res.text().catch(()=>'');
+      throw new Error(`Erreur ${res.status}${errBody?' — '+errBody.slice(0,120):''}`);
+    }
     const data=await res.json();
     const text=data?.aiRecord?.aiRecordDetail?.resultObject?.[0]||data?.result||data?.response||data?.content||'Réponse reçue (format inattendu)';
     document.getElementById('aiResultText').textContent=text;
@@ -1264,7 +1444,18 @@ function driveInit(){GDriveModule.init()}
 })();
 
 // ══ INIT ══
-window.addEventListener('load',()=>{config=loadConfig();notes=loadNotes();renderFavRow();document.getElementById('pwdInput').focus()});
+window.addEventListener('load',()=>{
+  config=loadConfig();notes=loadNotes();
+  // Assigner matricules aux notes existantes qui n'en ont pas
+  let changed=false;
+  if(!config.nextMatricule)config.nextMatricule=1;
+  notes.forEach(n=>{
+    if(!n.matricule){n.matricule=config.nextMatricule++;changed=true;}
+    if(n.pos===undefined){n.pos=notes.indexOf(n);changed=true;}
+  });
+  if(changed){saveConfig(config);saveNotes(notes);}
+  renderFavRow();document.getElementById('pwdInput').focus();
+});
 </script>
 </body>
 </html>
