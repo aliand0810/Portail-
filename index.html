@@ -547,6 +547,7 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
       <span id="driveStatus" style="font-size:11px;color:var(--muted)">Non connecté</span>
       <span class="drive-email" id="driveEmail" style="display:none"></span>
       <span class="drive-count" id="driveCount" style="display:none"></span>
+      <span id="gdrive-last-save-time" style="font-size:10px;color:var(--dim)"></span>
       <div class="drive-saving" id="driveSaving"><div class="drive-saving-dot"></div>⏳ Sauvegarde…</div>
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;align-items:center">
@@ -692,9 +693,12 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
       <div id="driveFolderSection" style="display:none;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
         <label class="s-label">Dossier de sauvegarde</label>
         <div class="drive-folder-row">
-          <select id="driveFolderSelect"><option value="">— Chargement des dossiers… —</option></select>
+          <select id="driveFolderSelect" onchange="gdriveOnFolderSelect()"><option value="">— Choisir un dossier —</option></select>
           <button class="btn-ghost" id="driveRefreshFolders" style="font-size:11px;padding:8px 12px">↻</button>
-          <button class="btn-gold" id="driveNewFolder" style="padding:9px 14px;font-size:11px">+ Nouveau dossier</button>
+        </div>
+        <div class="drive-folder-row" style="margin-top:8px">
+          <input type="text" id="driveNewFolderInput" class="s-input" placeholder="Nom du nouveau dossier…" style="font-size:12px">
+          <button class="btn-gold" id="driveNewFolder" style="padding:9px 14px;font-size:11px">+ Créer</button>
         </div>
         <div id="driveFolderStatus" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
       </div>
@@ -1347,346 +1351,478 @@ recBtn.addEventListener('click',async()=>{
   }catch(e){toast('Micro non disponible : '+e.message,'err')}
 });
 
-// ══ GOOGLE DRIVE ══
-const GDriveModule = (function () {
-  // ── état interne ──
-  let token = null, userEmail = '', folderId = '', backupCount = 0;
+// ══ GOOGLE DRIVE — Copié depuis COVO Pro ══
+(function(){
+  'use strict';
 
-  // ── helpers DOM ──
-  const $  = id => document.getElementById(id);
-  const led = () => $('driveLed');
-  const stEl = () => $('driveStatus');
+  // ---- State ----
+  let _gdTokenClient = null;
+  let _gdAccessToken = null;
+  let _gdFileId      = null;
+  let _gdFolderId    = null;
+  let _gdFolderName  = '';
+  let _gdConnected   = false;
+  let _gdSaving      = false;
+  let _gdUserEmail   = '';
+  let _gdAllFolders  = [];
+  let _gdRestoring   = false;
+  const GD_SCOPE = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email';
 
-  // ── statut visuel ──
-  function setStatus(s) {
-    const l = led(); l.className = 'drive-led';
-    const em=$('driveEmail'),cnt=$('driveCount'),sv=$('driveSaveBtn'),
-          ld=$('driveLoadBtn'),con=$('driveConnectBtn'),
-          dis=$('driveDisconnectBtn'),fs=$('driveFolderSection');
-    if (s === 'on') {
-      l.classList.add('green');
-      stEl().textContent = 'Connecté';
-      em.textContent = userEmail; em.style.display = '';
-      cnt.textContent = backupCount + ' sauvegarde' + (backupCount !== 1 ? 's' : '');
-      cnt.style.display = '';
-      con.style.display  = 'none';
-      dis.style.display  = '';
-      sv.style.display   = '';
-      ld.style.display   = '';
-      if (fs) fs.style.display = 'block';
-    } else if (s === 'busy') {
-      l.classList.add('yellow', 'pulse');
-      stEl().textContent = 'Connexion…';
-    } else {
-      l.classList.add(navigator.onLine ? '' : 'red');
-      stEl().textContent = navigator.onLine ? 'Non connecté' : 'Hors ligne';
-      em.style.display   = 'none';
-      cnt.style.display  = 'none';
-      con.style.display  = '';
-      dis.style.display  = 'none';
-      sv.style.display   = 'none';
-      ld.style.display   = 'none';
-      if (fs) fs.style.display = 'none';
+  // ---- Status bar ----
+  function _gdUpdateStatusBar(connected, label, time){
+    // LED
+    const led = document.getElementById('driveLed');
+    const st  = document.getElementById('driveStatus');
+    const tm  = document.getElementById('gdrive-last-save-time');
+    const isOnline = navigator.onLine;
+    if(led){
+      led.className='drive-led';
+      if(connected)      { led.classList.add('green'); }
+      else if(isOnline)  { led.classList.add('yellow'); }
+      else               { led.classList.add('red'); }
+    }
+    if(st){
+      if(connected)      st.textContent = label||'☁️ Drive connecté';
+      else if(isOnline)  st.textContent = label||'● En ligne';
+      else               st.textContent = label||'● Hors ligne';
+    }
+    if(tm){
+      if(time){
+        const d=new Date(time);
+        const isToday=d.toDateString()===new Date().toDateString();
+        const ds=isToday
+          ? d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})
+          : d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+        tm.textContent=connected?'· Sauvegardé '+ds:'';
+      }else{ tm.textContent=''; }
     }
   }
 
-  function setSaving(on) {
-    $('driveSaving').classList.toggle('on', on);
-    if (!on && token) led().className = 'drive-led green';
-    else if (on) led().classList.add('pulse');
+  function _gdUpdateNetworkStatus(){
+    if(!_gdConnected) _gdUpdateStatusBar(false);
+  }
+  window.addEventListener('online',  _gdUpdateNetworkStatus);
+  window.addEventListener('offline', _gdUpdateNetworkStatus);
+
+  function _gdShowSaving(show){
+    document.getElementById('driveSaving').classList.toggle('on',show);
   }
 
-  // ── appel API authentifié ──
-  async function api(url, opts = {}) {
-    if (!token) throw new Error('Non connecté à Drive');
-    const r = await fetch(url, {
-      ...opts,
-      headers: { Authorization: 'Bearer ' + token, ...(opts.headers || {}) }
+  // ---- Load GIS dynamically (lazy — only on connect click) ----
+  function _gdLoadGIS(){
+    return new Promise((resolve,reject)=>{
+      if(window.google&&window.google.accounts){resolve();return;}
+      const s=document.createElement('script');
+      s.src='https://accounts.google.com/gsi/client';
+      s.async=true; s.defer=true;
+      s.onload=()=>resolve();
+      s.onerror=()=>reject(new Error('Impossible de charger Google Identity Services'));
+      document.head.appendChild(s);
     });
-    if (r.status === 401) { token = null; setStatus('off'); throw new Error('Session expirée — reconnectez-vous'); }
-    if (!r.ok) { const t = await r.text().catch(() => ''); throw new Error('HTTP ' + r.status + (t ? ' : ' + t.slice(0, 120) : '')); }
-    return r;
   }
 
-  // ── liste des dossiers ──
-  async function populateFolders() {
-    const sel = $('driveFolderSelect'); if (!sel) return;
-    sel.innerHTML = '<option value="">— Racine Drive —</option>';
-    try {
-      const q = encodeURIComponent("mimeType='application/vnd.google-apps.folder' and trashed=false");
-      const r = await api(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=100`);
-      const d = await r.json();
-      (d.files || []).sort((a, b) => a.name.localeCompare(b.name)).forEach(f => {
-        const o = document.createElement('option');
-        o.value = f.id; o.textContent = f.name;
-        if (f.id === config.driveFolderId) o.selected = true;
-        sel.appendChild(o);
+  // ---- Connect ----
+  window.gdriveConnect = async function(){
+    const clientId=(config.gClientId||'').trim()||(localStorage.getItem('gdrive_client_id')||'');
+    if(!clientId){
+      toast('⚠️ Entrez votre Client ID Google dans l\u0027onglet Sécurité','err');
+      return;
+    }
+    localStorage.setItem('gdrive_client_id',clientId);
+    try{
+      _gdUpdateStatusBar(false,'Google Drive — Connexion…');
+      await _gdLoadGIS();
+
+      _gdTokenClient=google.accounts.oauth2.initTokenClient({
+        client_id:clientId,
+        scope:GD_SCOPE,
+        callback:async(resp)=>{
+          if(resp.error){
+            _gdUpdateStatusBar(false,'Google Drive — Erreur d’auth');
+            toast('❌ Erreur de connexion Google Drive : '+resp.error,'err');
+            return;
+          }
+          _gdAccessToken=resp.access_token;
+          _gdConnected=true;
+          localStorage.setItem('gdrive_connected','1');
+
+          // Email utilisateur
+          try{
+            const info=await fetch('https://www.googleapis.com/oauth2/v2/userinfo',{
+              headers:{Authorization:'Bearer '+_gdAccessToken}
+            }).then(r=>r.json());
+            _gdUserEmail=info.email||'';
+            localStorage.setItem('gdrive_email',_gdUserEmail);
+          }catch(e){}
+
+          _gdUpdateUI(true);
+          _gdUpdateStatusBar(true,'☁️ Drive connecté — '+(_gdUserEmail||'Connecté'));
+
+          // Email dans la barre
+          const em=document.getElementById('driveEmail');
+          if(em){em.textContent=_gdUserEmail;em.style.display='';}
+
+          // Dossiers
+          await _gdLoadFolders();
+          await _gdRestoreSavedFolder();
+
+          toast('✅ Google Drive connecté — '+_gdUserEmail,'info');
+        }
       });
-      if (!config.driveFolderId) sel.value = '';
-      const st = $('driveFolderStatus');
-      if (st) st.textContent = (d.files || []).length + ' dossier(s) trouvé(s)';
-    } catch (e) {
-      const st = $('driveFolderStatus');
-      if (st) st.textContent = 'Erreur : ' + e.message;
+      _gdTokenClient.requestAccessToken({prompt:''});
+    }catch(err){
+      _gdUpdateStatusBar(false,'Google Drive — Erreur');
+      toast('❌ '+err.message,'err');
+    }
+  };
+
+  // ---- Silent token refresh ----
+  async function _gdRefreshToken(){
+    if(!_gdTokenClient) return false;
+    return new Promise(resolve=>{
+      _gdTokenClient.callback=(resp)=>{
+        if(resp.error){_gdConnected=false;_gdUpdateUI(false);_gdUpdateStatusBar(false);resolve(false);return;}
+        _gdAccessToken=resp.access_token;
+        _gdConnected=true;
+        resolve(true);
+      };
+      _gdTokenClient.requestAccessToken({prompt:''});
+    });
+  }
+
+  // ---- Fetch with auth + auto-refresh ----
+  async function _gdFetch(url,opts){
+    opts=opts||{};
+    opts.headers=opts.headers||{};
+    opts.headers['Authorization']='Bearer '+_gdAccessToken;
+    let resp=await fetch(url,opts);
+    if(resp.status===401){
+      const refreshed=await _gdRefreshToken();
+      if(!refreshed) throw new Error('Token expiré — reconnectez Drive');
+      opts.headers['Authorization']='Bearer '+_gdAccessToken;
+      resp=await fetch(url,opts);
+    }
+    return resp;
+  }
+
+  // ---- Load folders ----
+  async function _gdLoadFolders(){
+    try{
+      const q=encodeURIComponent("mimeType='application/vnd.google-apps.folder' and trashed=false");
+      const resp=await _gdFetch('https://www.googleapis.com/drive/v3/files?q='+q+'&fields=files(id,name)&orderBy=name&pageSize=100');
+      const data=await resp.json();
+      _gdAllFolders=(data.files||[]).sort((a,b)=>a.name.localeCompare(b.name));
+    }catch(e){_gdAllFolders=[];}
+    _gdRenderFolderSelect();
+  }
+
+  function _gdRenderFolderSelect(){
+    const sel=document.getElementById('driveFolderSelect');
+    if(!sel) return;
+    const savedId=_gdFolderId||localStorage.getItem('gdrive_folder_id')||'';
+    let html='<option value="">— Choisir un dossier —</option>';
+    _gdAllFolders.forEach(f=>{
+      const sel2=f.id===savedId?' selected':'';
+      html+=`<option value="${f.id}"${sel2}>📁 ${f.name}</option>`;
+    });
+    sel.innerHTML=html;
+    if(savedId&&_gdAllFolders.find(f=>f.id===savedId)) sel.value=savedId;
+    const cnt=document.getElementById('driveFolderStatus');
+    if(cnt) cnt.textContent=_gdAllFolders.length+' dossier(s) trouvé(s)';
+  }
+
+  async function _gdRestoreSavedFolder(){
+    const savedId=localStorage.getItem('gdrive_folder_id')||'';
+    if(savedId){
+      const exists=_gdAllFolders.find(f=>f.id===savedId);
+      if(exists){
+        _gdFolderId=savedId;
+        _gdFolderName=exists.name;
+        _gdFileId=null;
+        _gdUpdateFolderInfo();
+        _gdUpdateStatusBar(true,'☁️ Drive — '+(_gdUserEmail||'Connecté')+' · 📁 '+_gdFolderName,localStorage.getItem('gdrive_last_save'));
+        return;
+      }
+    }
+    // Pas de dossier sauvegardé → juste afficher la liste
+  }
+
+  function _gdUpdateFolderInfo(){
+    const info=document.getElementById('driveFolderSection');
+    if(info) info.style.display='block';
+    const sel=document.getElementById('driveFolderSelect');
+    if(sel&&_gdFolderId) sel.value=_gdFolderId;
+    // Compter fichiers
+    _gdCountFiles();
+  }
+
+  async function _gdCountFiles(){
+    try{
+      let q="name='portail_backup.json' and trashed=false";
+      if(_gdFolderId) q+=" and '"+_gdFolderId+"' in parents";
+      const resp=await _gdFetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)+'&fields=files(id)');
+      const data=await resp.json();
+      const n=(data.files||[]).length;
+      const cnt=document.getElementById('driveCount');
+      if(cnt){cnt.textContent=n+' sauvegarde'+(n!==1?'s':'');cnt.style.display='';}
+    }catch(e){}
+  }
+
+  // ---- Folder select change ----
+  window.gdriveOnFolderSelect=async function(){
+    const sel=document.getElementById('driveFolderSelect');
+    if(!sel) return;
+    const id=sel.value;
+    const f=_gdAllFolders.find(x=>x.id===id);
+    if(!f) return;
+    _gdFolderId=id;
+    _gdFolderName=f.name;
+    _gdFileId=null;
+    localStorage.setItem('gdrive_folder_id',id);
+    localStorage.setItem('gdrive_folder_name',f.name);
+    config.driveFolderId=id;
+    config.driveFolderName=f.name;
+    saveConfig(config);
+    _gdUpdateStatusBar(true,'☁️ Drive — '+(_gdUserEmail||'Connecté')+' · 📁 '+_gdFolderName,localStorage.getItem('gdrive_last_save'));
+    toast('📁 Dossier : '+f.name,'info');
+    await _gdCountFiles();
+  };
+
+  // ---- Create folder ----
+  window.gdriveCreateFolder=async function(){
+    const inp=document.getElementById('driveNewFolderInput');
+    const name=(inp&&inp.value.trim())||prompt('Nom du nouveau dossier :');
+    if(!name) return;
+    try{
+      const meta={name,mimeType:'application/vnd.google-apps.folder'};
+      if(_gdFolderId) meta.parents=[_gdFolderId];
+      const resp=await _gdFetch('https://www.googleapis.com/drive/v3/files',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(meta)
+      });
+      const data=await resp.json();
+      _gdAllFolders.push({id:data.id,name:data.name});
+      _gdAllFolders.sort((a,b)=>a.name.localeCompare(b.name));
+      _gdFolderId=data.id; _gdFolderName=data.name;
+      localStorage.setItem('gdrive_folder_id',data.id);
+      localStorage.setItem('gdrive_folder_name',data.name);
+      config.driveFolderId=data.id;config.driveFolderName=data.name;saveConfig(config);
+      _gdRenderFolderSelect();
+      _gdUpdateFolderInfo();
+      if(inp) inp.value='';
+      toast('✅ Dossier "'+data.name+'" créé','info');
+    }catch(e){toast('❌ '+e.message,'err');}
+  };
+
+  // ---- Refresh folders ----
+  window.gdriveRefreshFolders=async function(){
+    if(!_gdConnected){toast('Non connecté','err');return;}
+    await _gdLoadFolders();
+    toast('📂 Liste des dossiers mise à jour','info');
+  };
+
+  // ---- Ensure file exists ----
+  async function _gdEnsureFile(){
+    if(_gdFileId) return _gdFileId;
+    let q="name='portail_backup.json' and trashed=false";
+    if(_gdFolderId) q+=" and '"+_gdFolderId+"' in parents";
+    const resp=await _gdFetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)+'&fields=files(id)&orderBy=modifiedTime desc&pageSize=1');
+    const data=await resp.json();
+    _gdFileId=(data.files&&data.files[0]&&data.files[0].id)||null;
+    return _gdFileId;
+  }
+
+  // ---- Do Save ----
+  async function _gdDoSave(){
+    if(_gdSaving||_gdRestoring) return;
+    _gdSaving=true;
+    _gdShowSaving(true);
+    try{
+      const payload=JSON.stringify({config,notes,feedbacks,savedAt:new Date().toISOString()},null,2);
+      const existingId=await _gdEnsureFile();
+      let fileId;
+      if(existingId){
+        await _gdFetch('https://www.googleapis.com/upload/drive/v3/files/'+existingId+'?uploadType=media',{
+          method:'PATCH',
+          headers:{'Content-Type':'application/json'},
+          body:payload
+        });
+        fileId=existingId;
+      }else{
+        const meta={name:'portail_backup.json',mimeType:'application/json'};
+        if(_gdFolderId) meta.parents=[_gdFolderId];
+        const form=new FormData();
+        form.append('metadata',new Blob([JSON.stringify(meta)],{type:'application/json'}));
+        form.append('file',new Blob([payload],{type:'application/json'}));
+        const resp=await _gdFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{method:'POST',body:form});
+        const d=await resp.json();
+        fileId=d.id;
+      }
+      _gdFileId=fileId;
+      const now=new Date().toISOString();
+      localStorage.setItem('gdrive_last_save',now);
+      localStorage.setItem('gdrive_last_file',fileId);
+      _gdUpdateStatusBar(true,'☁️ Drive connecté',now);
+      await _gdCountFiles();
+    }finally{
+      _gdSaving=false;
+      _gdShowSaving(false);
     }
   }
 
-  // ── comptage sauvegardes ──
-  async function countBackups() {
-    try {
-      let q = "name='portail_backup.json' and trashed=false";
-      if (folderId) q += ` and '${folderId}' in parents`;
-      const r = await api(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`);
-      const d = await r.json();
-      backupCount = (d.files || []).length;
-      const cnt = $('driveCount');
-      if (cnt) cnt.textContent = backupCount + ' sauvegarde' + (backupCount !== 1 ? 's' : '');
-    } catch (_) {}
-  }
+  // ---- Save Now (bouton) ----
+  window.gdriveSaveNow=async function(){
+    if(!_gdConnected){toast('⚠️ Google Drive non connecté','err');return;}
+    if(!_gdFolderId){toast('⚠️ Aucun dossier sélectionné','err');return;}
+    try{ await _gdDoSave(); toast('✅ Sauvegardé sur Drive · 📁 '+_gdFolderName); }
+    catch(e){ toast('❌ Erreur sauvegarde : '+e.message,'err'); }
+  };
 
-  // ── sauvegarde ──
-  async function save() {
-    setSaving(true);
-    try {
-      const data = JSON.stringify({ config, notes, savedAt: new Date().toISOString() }, null, 2);
-      let q = "name='portail_backup.json' and trashed=false";
-      if (folderId) q += ` and '${folderId}' in parents`;
-      const sr = await api(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`);
-      const sd = await sr.json();
-      const ex = (sd.files || [])[0];
-      if (ex) {
-        await api(
-          `https://www.googleapis.com/upload/drive/v3/files/${ex.id}?uploadType=media`,
-          { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: data }
-        );
-      } else {
-        const meta = { name: 'portail_backup.json', mimeType: 'application/json' };
-        if (folderId) meta.parents = [folderId];
-        const form = new FormData();
-        form.append('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
-        form.append('file',     new Blob([data],               { type: 'application/json' }));
-        await api('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', body: form });
-        backupCount++;
-      }
-      const cnt = $('driveCount');
-      if (cnt) cnt.textContent = backupCount + ' sauvegarde' + (backupCount !== 1 ? 's' : '');
-      toast('✅ Sauvegardé sur Google Drive');
-    } catch (e) { toast('Erreur Drive : ' + e.message, 'err'); }
-    finally { setSaving(false); }
-  }
-
-  // ── modal restauration ──
-  async function openRestoreModal() {
-    const modal = $('restoreModal'), list = $('restoreList');
+  // ---- Open Restore Modal ----
+  window.gdriveOpenRestoreModal=async function(){
+    if(!_gdConnected){toast('⚠️ Connectez Drive d’abord','err');return;}
+    const modal=document.getElementById('restoreModal');
+    const list=document.getElementById('restoreList');
     modal.classList.add('open');
-    list.innerHTML = '<div class="restore-loading"><div class="restore-spinner"></div><br>Chargement des sauvegardes…</div>';
-    try {
-      let q = "name='portail_backup.json' and trashed=false";
-      if (folderId) q += ` and '${folderId}' in parents`;
-      const sr = await api(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime,size)&orderBy=modifiedTime desc`);
-      const sd = await sr.json();
-      const files = sd.files || [];
-      let versions = [];
-      for (const file of files) {
-        try {
-          const rv = await api(`https://www.googleapis.com/drive/v3/files/${file.id}/revisions?fields=revisions(id,modifiedTime,size)`);
-          const rd = await rv.json();
-          const revs = (rd.revisions || []).reverse();
-          if (revs.length) {
-            revs.forEach((rev, i) => versions.push({ fileId: file.id, revId: rev.id, modifiedTime: rev.modifiedTime, size: rev.size, latest: i === 0 }));
-          } else {
-            versions.push({ fileId: file.id, revId: null, modifiedTime: file.modifiedTime, size: file.size, latest: true });
-          }
-        } catch (_) {
-          versions.push({ fileId: file.id, revId: null, modifiedTime: file.modifiedTime, size: file.size, latest: true });
-        }
-      }
-      versions.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
-      if (!versions.length) { list.innerHTML = '<div class="restore-loading">Aucune sauvegarde trouvée.</div>'; return; }
-      list.innerHTML = '';
-      versions.forEach((v, idx) => {
-        const d   = new Date(v.modifiedTime);
-        const ds  = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-        const ts  = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-        const sz  = v.size ? Math.round(parseInt(v.size) / 1024) + ' ko' : '';
-        const item = document.createElement('div'); item.className = 'restore-item';
-        item.innerHTML = `
-          <div style="width:32px;height:32px;border-radius:8px;background:${idx===0?'var(--gold-dim)':'var(--surface2)'};display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">${idx===0?'⭐':'🕐'}</div>
-          <div style="flex:1;min-width:0">
-            <div class="restore-item-date">${ds}</div>
-            <div class="restore-item-sub">${ts}${idx===0?' · Plus récente':''}${sz?' · '+sz:''}</div>
-          </div>
+    list.innerHTML='<div class="restore-loading"><div class="restore-spinner"></div><br>Chargement des sauvegardes…</div>';
+    try{
+      let q="name='portail_backup.json' and trashed=false";
+      if(_gdFolderId) q+=" and '"+_gdFolderId+"' in parents";
+      const resp=await _gdFetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)+'&fields=files(id,name,modifiedTime,size)&orderBy=modifiedTime desc&pageSize=50');
+      const data=await resp.json();
+      const files=data.files||[];
+      if(!files.length){list.innerHTML='<div class="restore-loading">Aucune sauvegarde trouvée.</div>';return;}
+      list.innerHTML='';
+      files.forEach((f,idx)=>{
+        const d=new Date(f.modifiedTime);
+        const ds=d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+        const ts=d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+        const sz=f.size?Math.round(parseInt(f.size)/1024)+' ko':'';
+        const item=document.createElement('div');item.className='restore-item';
+        item.innerHTML=`<div style="width:32px;height:32px;border-radius:8px;background:${idx===0?'var(--gold-dim)':'var(--surface2)'};display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">${idx===0?'⭐':'🕐'}</div>
+          <div style="flex:1;min-width:0"><div class="restore-item-date">${ds}</div><div class="restore-item-sub">${ts}${idx===0?' · Plus récente':''}${sz?' · '+sz:''}</div></div>
           <div class="restore-arrow">→</div>`;
-        item.addEventListener('click', async () => {
-          if (!confirm('Restaurer la version du ' + ds + ' à ' + ts + ' ?\n\nLes données locales seront remplacées.')) return;
+        item.addEventListener('click',()=>{
+          if(!confirm('Restaurer la version du '+ds+' à '+ts+' ?\n\nLes données locales seront remplacées.')) return;
           modal.classList.remove('open');
-          setSaving(true);
-          try {
-            const url = v.revId
-              ? `https://www.googleapis.com/drive/v3/files/${v.fileId}/revisions/${v.revId}?alt=media`
-              : `https://www.googleapis.com/drive/v3/files/${v.fileId}?alt=media`;
-            const fr = await api(url);
-            const dt = await fr.json();
-            if (dt.config) { Object.assign(config, dt.config); saveConfig(config); }
-            if (dt.notes)  { notes = dt.notes; saveNotes(notes); }
-            renderUserList(); renderNotes();
-            $('gClientId').value = config.gClientId || '';
-            $('gApiKey').value   = config.gApiKey   || '';
-            toast('✅ Restauré — ' + ds + ' à ' + ts, 'info');
-          } catch (e) { toast('Erreur restauration : ' + e.message, 'err'); }
-          finally { setSaving(false); }
+          window.gdriveRestoreFile(f.id,f.name);
         });
         list.appendChild(item);
       });
-    } catch (e) {
-      list.innerHTML = '<div class="restore-loading">Erreur : ' + e.message + '</div>';
+    }catch(err){
+      list.innerHTML='<div class="restore-loading">Erreur : '+err.message+'</div>';
+    }
+  };
+
+  // ---- Restore file ----
+  window.gdriveRestoreFile=async function(fileId,fileName){
+    _gdShowSaving(true);
+    try{
+      const resp=await _gdFetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media');
+      const text=await resp.text();
+      const data=JSON.parse(text);
+      _gdRestoring=true;
+      if(data.config){Object.assign(config,data.config);saveConfig(config);}
+      if(data.notes){notes=data.notes;saveNotes(notes);}
+      if(data.feedbacks){feedbacks=data.feedbacks;saveFeedbacks(feedbacks);}
+      renderUserList();renderNotes();
+      document.getElementById('gClientId').value=config.gClientId||'';
+      document.getElementById('gApiKey').value=config.gApiKey||'';
+      setTimeout(()=>{_gdRestoring=false;},3000);
+      toast('✅ Restauré depuis "'+fileName+'"','info');
+    }catch(e){toast('❌ Erreur restauration : '+e.message,'err');}
+    finally{_gdShowSaving(false);}
+  };
+
+  // ---- Disconnect ----
+  window.gdriveDisconnect=function(){
+    _gdConnected=false;_gdAccessToken=null;_gdFileId=null;
+    _gdFolderId=null;_gdFolderName='';_gdAllFolders=[];
+    localStorage.removeItem('gdrive_connected');localStorage.removeItem('gdrive_last_save');
+    localStorage.removeItem('gdrive_last_file');localStorage.removeItem('gdrive_email');
+    localStorage.removeItem('gdrive_folder_id');localStorage.removeItem('gdrive_folder_name');
+    if(window.google&&google.accounts&&google.accounts.oauth2){
+      try{google.accounts.oauth2.revoke(_gdAccessToken);}catch(e){}
+    }
+    _gdUpdateUI(false);
+    _gdUpdateStatusBar(false,'Google Drive — Déconnecté');
+    toast('☁️ Google Drive déconnecté','info');
+  };
+
+  // ---- Update UI buttons ----
+  function _gdUpdateUI(connected){
+    const sv=document.getElementById('driveSaveBtn'),ld=document.getElementById('driveLoadBtn');
+    const con=document.getElementById('driveConnectBtn'),dis=document.getElementById('driveDisconnectBtn');
+    const em=document.getElementById('driveEmail'),fs=document.getElementById('driveFolderSection');
+    if(con) con.style.display=connected?'none':'';
+    if(dis) dis.style.display=connected?'':'none';
+    if(sv)  sv.style.display=connected?'':'none';
+    if(ld)  ld.style.display=connected?'':'none';
+    if(em)  {em.textContent=connected?_gdUserEmail:'';em.style.display=connected?'':'none';}
+    if(fs)  fs.style.display=connected?'block':'none';
+    if(!connected){
+      const sel=document.getElementById('driveFolderSelect');
+      if(sel) sel.innerHTML='<option value="">— Choisir un dossier —</option>';
+      const cnt=document.getElementById('driveCount');
+      if(cnt) {cnt.textContent='';cnt.style.display='none';}
     }
   }
 
-  // ── créer un dossier ──
-  async function createFolder() {
-    const name = prompt('Nom du nouveau dossier :'); if (!name) return;
-    try {
-      const meta = { name, mimeType: 'application/vnd.google-apps.folder' };
-      if (folderId) meta.parents = [folderId];
-      const r = await api('https://www.googleapis.com/drive/v3/files', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(meta)
-      });
-      const d = await r.json();
-      config.driveFolderId = d.id; config.driveFolderName = d.name;
-      folderId = d.id; saveConfig(config);
-      await populateFolders();
-      toast('Dossier "' + d.name + '" créé', 'info');
-    } catch (e) { toast('Erreur : ' + e.message, 'err'); }
-  }
-
-  // ── déconnexion ──
-  function disconnect() { token = null; userEmail = ''; setStatus('off'); toast('Drive déconnecté'); }
-
-  // ══════════════════════════════════════════
-  // CONNEXION — flux OAuth2 Implicit (popup)
-  // ══════════════════════════════════════════
-  function connect() {
-    const clientId = (config.gClientId || '').trim();
-    if (!clientId) {
-      toast('⚠️ Allez dans Sécurité → saisissez votre Client ID Google avant de connecter', 'err');
-      return;
-    }
-    // Déterminer l'URI de redirection exacte (la page courante sans query/hash)
-    const redirectUri = location.origin + location.pathname;
-
-    const params = new URLSearchParams({
-      client_id:     clientId,
-      redirect_uri:  redirectUri,
-      response_type: 'token',
-      scope:         'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
-      prompt:        'select_account',
-      include_granted_scopes: 'true'
-    });
-
-    const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
-
-    // Ouvrir popup centré
-    const pw = 520, ph = 640;
-    const pl = Math.max(0, (screen.width  - pw) / 2);
-    const pt = Math.max(0, (screen.height - ph) / 2);
-    const popup = window.open(authUrl, '_blank',
-      `width=${pw},height=${ph},left=${pl},top=${pt},toolbar=0,menubar=0,location=1,status=0`);
-
-    if (!popup || popup.closed) {
-      toast('❌ Popup bloquée — autorisez les popups pour ce site dans votre navigateur', 'err');
-      setStatus('off'); return;
-    }
-
-    setStatus('busy');
-    let done = false;
-
-    const poll = setInterval(async () => {
-      try {
-        if (popup.closed && !done) {
-          clearInterval(poll); setStatus('off');
-          toast('Connexion annulée', 'info'); return;
-        }
-        // Tenter de lire l'URL — bloqué tant qu'on est sur google.com (cross-origin)
-        let href = '';
-        try { href = popup.location.href; } catch (_) { return; }
-
-        // On est revenu sur notre page → lire le token dans le hash
-        if (href && href.startsWith(redirectUri)) {
-          clearInterval(poll); done = true;
-          try { popup.close(); } catch (_) {}
-
-          const hash = new URLSearchParams(popup.location.hash.replace(/^#/, ''));
-          const accessToken = hash.get('access_token');
-          const error       = hash.get('error');
-
-          if (error) {
-            setStatus('off');
-            toast('Erreur Google : ' + error, 'err'); return;
-          }
-          if (!accessToken) {
-            setStatus('off');
-            toast('Token introuvable dans la réponse Google', 'err'); return;
-          }
-
-          token = accessToken;
-          try {
-            const er = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-              headers: { Authorization: 'Bearer ' + token }
+  // ---- Init ----
+  function _gdInit(){
+    _gdUpdateStatusBar(false);
+    _gdUpdateUI(false);
+    // Bouton Connecter
+    const conBtn=document.getElementById('driveConnectBtn');
+    if(conBtn) conBtn.addEventListener('click',window.gdriveConnect);
+    const disBtn=document.getElementById('driveDisconnectBtn');
+    if(disBtn) disBtn.addEventListener('click',window.gdriveDisconnect);
+    const svBtn=document.getElementById('driveSaveBtn');
+    if(svBtn)  svBtn.addEventListener('click',window.gdriveSaveNow);
+    const ldBtn=document.getElementById('driveLoadBtn');
+    if(ldBtn)  ldBtn.addEventListener('click',window.gdriveOpenRestoreModal);
+    const rfBtn=document.getElementById('driveRefreshFolders');
+    if(rfBtn)  rfBtn.addEventListener('click',window.gdriveRefreshFolders);
+    const nfBtn=document.getElementById('driveNewFolder');
+    if(nfBtn)  nfBtn.addEventListener('click',window.gdriveCreateFolder);
+    const selEl=document.getElementById('driveFolderSelect');
+    if(selEl)  selEl.addEventListener('change',window.gdriveOnFolderSelect);
+    // Reconnexion silencieuse si localStorage dit connecté
+    if(localStorage.getItem('gdrive_connected')==='1'){
+      const savedClientId=localStorage.getItem('gdrive_client_id')||config.gClientId||'';
+      if(savedClientId){
+        setTimeout(async()=>{
+          try{
+            await _gdLoadGIS();
+            _gdTokenClient=google.accounts.oauth2.initTokenClient({
+              client_id:savedClientId,
+              scope:GD_SCOPE,
+              callback:async(resp)=>{
+                if(resp.error){localStorage.removeItem('gdrive_connected');_gdUpdateStatusBar(false);return;}
+                _gdAccessToken=resp.access_token;
+                _gdConnected=true;
+                _gdUserEmail=localStorage.getItem('gdrive_email')||'';
+                _gdUpdateUI(true);
+                await _gdLoadFolders();
+                await _gdRestoreSavedFolder();
+                _gdUpdateStatusBar(true,'☁️ Drive reconnecté — '+(_gdUserEmail||''),localStorage.getItem('gdrive_last_save'));
+                toast('☁️ Drive reconnecté silencieusement','info');
+              }
             });
-            if (!er.ok) throw new Error('HTTP ' + er.status);
-            const ed   = await er.json();
-            userEmail  = ed.email || '';
-            folderId   = config.driveFolderId || '';
-            await countBackups();
-            setStatus('on');
-            await populateFolders();
-            toast('✅ Google Drive connecté — ' + userEmail, 'info');
-          } catch (e) {
-            token = null; setStatus('off');
-            toast('Erreur après connexion : ' + e.message, 'err');
-          }
-        }
-      } catch (_) { /* cross-origin, on attend */ }
-    }, 300);
-
-    // Timeout 3 min
-    setTimeout(() => {
-      if (!done) {
-        clearInterval(poll); done = true;
-        try { popup.close(); } catch (_) {}
-        if (!token) { setStatus('off'); toast('Délai dépassé — réessayez', 'err'); }
+            _gdTokenClient.requestAccessToken({prompt:''});
+          }catch(e){localStorage.removeItem('gdrive_connected');}
+        },1500);
       }
-    }, 180000);
+    }
   }
 
-  // ── initialisation ──
-  function init() {
-    setStatus('off');
-    $('driveConnectBtn') .addEventListener('click', connect);
-    $('driveDisconnectBtn').addEventListener('click', disconnect);
-    $('driveSaveBtn')    .addEventListener('click', save);
-    $('driveLoadBtn')    .addEventListener('click', openRestoreModal);
-    $('driveNewFolder')  .addEventListener('click', createFolder);
-    $('driveRefreshFolders').addEventListener('click', populateFolders);
-    $('driveFolderSelect').addEventListener('change', e => {
-      config.driveFolderId  = e.target.value;
-      folderId              = e.target.value;
-      const opt = e.target.options[e.target.selectedIndex];
-      config.driveFolderName = opt ? opt.textContent.trim() : '';
-      saveConfig(config);
-      toast('Dossier : ' + (config.driveFolderName || 'Racine'), 'info');
-    });
-    window.addEventListener('online',  () => { if (!token) setStatus('off'); });
-    window.addEventListener('offline', () => {
-      if (!token) { led().className = 'drive-led red'; stEl().textContent = 'Hors ligne'; }
-    });
-  }
+  // Exposer init
+  window.GDriveInit=_gdInit;
 
-  return { init };
 })();
 
-function driveInit(){GDriveModule.init()}
+function driveInit(){if(window.GDriveInit)window.GDriveInit();}
 (function(){
   function buildIcon(sz){
     const c=document.createElement('canvas');c.width=c.height=sz;const ctx=c.getContext('2d'),s=sz,cx=s/2,cy=s/2;
