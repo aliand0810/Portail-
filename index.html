@@ -1148,34 +1148,67 @@ const GDriveModule=(function(){
   }
 
   function connect(){
-    if(!config.gClientId){toast('Configurez le Client ID dans l\u0027onglet Sécurité','err');return}
+    if(!config.gClientId){
+      toast('Configurez le Client ID OAuth dans l\'onglet Sécurité','err');return;
+    }
+    if(typeof google==='undefined'||!google.accounts||!google.accounts.oauth2){
+      toast('API Google non chargée — vérifiez votre connexion internet ou que le fichier est servi en HTTPS','err');
+      setStatus('off');return;
+    }
     setStatus('busy');
     try{
       tokenClient=google.accounts.oauth2.initTokenClient({
         client_id:config.gClientId,
         scope:'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
         callback:async resp=>{
-          if(resp.error){setStatus('off');toast('OAuth : '+resp.error,'err');return}
+          if(resp.error){
+            setStatus('off');
+            toast('Erreur OAuth : '+resp.error+(resp.error_description?' — '+resp.error_description:''),'err');
+            return;
+          }
           token=resp.access_token;
           try{
             const er=await fetch('https://www.googleapis.com/oauth2/v2/userinfo',{headers:{Authorization:'Bearer '+token}});
+            if(!er.ok)throw new Error('Userinfo HTTP '+er.status);
             const ed=await er.json();userEmail=ed.email||'';
             folderId=config.driveFolderId||'';
             await countBackups();
             setStatus('on');
             await populateFolders();
             toast('✅ Google Drive connecté — '+userEmail,'info');
-          }catch(e){setStatus('off');toast('Erreur : '+e.message,'err')}
+          }catch(e){setStatus('off');toast('Erreur après auth : '+e.message,'err')}
+        },
+        error_callback:err=>{
+          setStatus('off');
+          if(err.type==='popup_closed'){toast('Fenêtre OAuth fermée — réessayez','err')}
+          else{toast('Erreur OAuth : '+err.type,'err')}
         }
       });
-      tokenClient.requestAccessToken();
-    }catch(e){setStatus('off');toast('Google API non chargée. Vérifiez votre Client ID.','err')}
+      tokenClient.requestAccessToken({prompt:''});
+    }catch(e){
+      setStatus('off');
+      toast('Impossible d\'initialiser OAuth : '+e.message+' — vérifiez le Client ID','err');
+    }
   }
 
   function disconnect(){token=null;userEmail='';setStatus('off');toast('Drive déconnecté')}
 
   function init(){
     setStatus('off');
+    // Vérifier disponibilité API Google après chargement
+    function checkGoogleApi(){
+      const btn=document.getElementById('driveConnectBtn');
+      if(typeof google!=='undefined'&&google.accounts&&google.accounts.oauth2){
+        if(btn)btn.title='API Google prête';
+      } else {
+        if(btn)btn.title='API Google non disponible — fichier servi en HTTPS requis';
+      }
+    }
+    // Attendre que les scripts async soient chargés
+    if(document.readyState==='complete'){checkGoogleApi();}
+    else{window.addEventListener('load',checkGoogleApi);}
+    setTimeout(checkGoogleApi,2000);
+
     document.getElementById('driveConnectBtn').addEventListener('click',connect);
     document.getElementById('driveDisconnectBtn').addEventListener('click',disconnect);
     document.getElementById('driveSaveBtn').addEventListener('click',save);
