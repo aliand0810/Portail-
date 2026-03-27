@@ -1256,24 +1256,53 @@ self.addEventListener('fetch', e => {
   let deferredPrompt = null;
   const installBtn = document.getElementById('pwaInstallBtn');
 
+  // Déjà installée en standalone → masquer
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true;
+
+  if (!isStandalone) {
+    // Afficher immédiatement — l'utilisateur peut l'installer manuellement
+    installBtn.classList.add('visible');
+  }
+
+  // Prompt natif Chrome/Edge dès qu'il est prêt
   window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
     deferredPrompt = e;
     installBtn.classList.add('visible');
+    // Changer le texte pour indiquer que le prompt natif est disponible
+    installBtn.textContent = '📲 Installer l\'application';
   });
 
   installBtn.addEventListener('click', async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    deferredPrompt = null;
-    installBtn.classList.remove('visible');
-    if (outcome === 'accepted') showToast('Application installée !');
+    if (deferredPrompt) {
+      // Prompt natif disponible
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      if (outcome === 'accepted') {
+        installBtn.classList.remove('visible');
+        showToast('Application installée !');
+      }
+    } else {
+      // Guide manuel selon le navigateur
+      const ua = navigator.userAgent;
+      let msg = '';
+      if (/iPhone|iPad|iPod/.test(ua)) {
+        msg = 'Sur Safari iOS : appuyez sur ⬆️ Partager puis "Sur l\'écran d\'accueil"';
+      } else if (/android/i.test(ua)) {
+        msg = 'Dans Chrome : menu ⋮ → "Ajouter à l\'écran d\'accueil"';
+      } else {
+        msg = 'Dans Chrome/Edge : cliquez sur l\'icône ⊕ dans la barre d\'adresse';
+      }
+      showToast(msg, false);
+    }
   });
 
   window.addEventListener('appinstalled', () => {
     installBtn.classList.remove('visible');
     deferredPrompt = null;
+    showToast('Application installée avec succès !');
   });
 })();
 
