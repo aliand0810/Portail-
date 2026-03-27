@@ -297,6 +297,22 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
 /* Sauvegarde auto indicateur */
 .autosave-indicator{font-size:10px;color:var(--ok);display:none;align-items:center;gap:4px;animation:fadeIn .3s ease}
 .autosave-indicator.show{display:flex}
+/* ── Fullscreen preview ── */
+.ce-preview-fullscreen{position:fixed;inset:0;z-index:500;background:#111;display:none;flex-direction:column}
+.ce-preview-fullscreen.open{display:flex;animation:fadeIn .2s ease}
+.ce-fs-bar{display:flex;align-items:center;justify-content:space-between;padding:.6rem 1rem;background:rgba(7,7,13,.95);border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0;gap:10px}
+.ce-fs-title{font-size:11px;color:rgba(255,255,255,.5);letter-spacing:.1em;text-transform:uppercase}
+.ce-fs-btn{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:8px;color:rgba(255,255,255,.8);font-size:12px;padding:5px 12px;cursor:pointer;transition:background .2s;font-family:'DM Sans',sans-serif}
+.ce-fs-btn:hover{background:rgba(255,255,255,.15)}
+.ce-fs-frame{flex:1;border:none;background:white;width:100%}
+/* App-open */
+.app-open-list{display:flex;flex-direction:column;gap:8px;margin:.75rem 0}
+.app-open-item{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--rs);cursor:pointer;transition:all .2s}
+.app-open-item:hover{border-color:var(--gold);background:var(--gold-dim)}
+.app-open-icon{font-size:20px;width:36px;text-align:center;flex-shrink:0}
+.app-open-info{flex:1}
+.app-open-name{font-size:13px;font-weight:500}
+.app-open-desc{font-size:11px;color:var(--muted);margin-top:2px}
 .restore-list{display:flex;flex-direction:column;gap:8px;max-height:320px;overflow-y:auto;margin:1rem 0}
 .restore-item{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--rs);padding:12px 14px;cursor:pointer;transition:all .2s}
 .restore-item:hover{border-color:var(--gold);background:var(--gold-dim);transform:translateX(2px)}
@@ -724,6 +740,7 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
         <div class="ce-actions">
           <button class="btn-ce-save" id="ceSaveBtn">💾 Enregistrer</button>
           <button class="btn-ce-test" id="ceTestBtn">▶ Tester</button>
+          <button class="btn-ce-test" id="cePlayFullBtn" style="background:linear-gradient(135deg,#f59e0b,#d97706);flex:1">⛶ Play</button>
           <button class="btn-ce-ai" id="ceAiBtn">✨ IA</button>
         </div>
       </div>
@@ -731,9 +748,12 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
 
     <!-- Lecteur / Preview -->
     <div class="card" id="cePreviewCard" style="display:none;padding:0;overflow:hidden">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.25rem;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.25rem;border-bottom:1px solid var(--border);gap:8px">
         <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ok)">▶ Lecteur — Aperçu en direct</div>
-        <button class="btn-ghost" id="ceClosePreview" style="font-size:11px;padding:5px 10px">✕ Fermer</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn-ghost" id="ceFullscreenBtn" style="font-size:11px;padding:5px 10px" title="Plein écran">⛶ Plein écran</button>
+          <button class="btn-ghost" id="ceClosePreview" style="font-size:11px;padding:5px 10px">✕ Fermer</button>
+        </div>
       </div>
       <iframe id="cePreviewFrame" class="ce-preview-frame ce-preview-open" style="min-height:320px" sandbox="allow-scripts allow-same-origin"></iframe>
     </div>
@@ -823,6 +843,28 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
 <button class="pwa-btn" id="pwaInstallBtn">📲 Installer</button>
 <div class="lightbox" id="lightbox"><img id="lightboxImg" src="" alt=""></div>
 
+<!-- Fullscreen Code Preview -->
+<div class="ce-preview-fullscreen" id="ceFullscreen">
+  <div class="ce-fs-bar">
+    <div class="ce-fs-title" id="ceFullscreenTitle">▶ Lecteur plein écran</div>
+    <div style="display:flex;gap:8px">
+      <button class="ce-fs-btn" id="ceFsReload">↺ Recharger</button>
+      <button class="ce-fs-btn" id="ceFsClose">✕ Fermer</button>
+    </div>
+  </div>
+  <iframe class="ce-fs-frame" id="ceFsFrame" sandbox="allow-scripts allow-same-origin"></iframe>
+</div>
+
+<!-- App Open Modal -->
+<div class="overlay" id="appOpenModal">
+  <div class="modal-box" style="max-width:380px">
+    <div class="modal-title" id="appOpenTitle">Ouvrir avec…</div>
+    <div class="modal-sub" id="appOpenUrl" style="word-break:break-all;font-size:11px"></div>
+    <div class="app-open-list" id="appOpenList"></div>
+    <div style="text-align:right"><button class="btn-ghost" id="appOpenClose">Annuler</button></div>
+  </div>
+</div>
+
 <script>
 document.getElementById('restoreModalClose').addEventListener('click',()=>document.getElementById('restoreModal').classList.remove('open'));
 document.getElementById('restoreModal').addEventListener('click',e=>{if(e.target===document.getElementById('restoreModal'))document.getElementById('restoreModal').classList.remove('open')});
@@ -877,18 +919,111 @@ function renderFavRow(){
 }
 
 // ══ REDIRECT ══
+// ── App detection helper ──
+function detectApps(url){
+  const apps=[];
+  try{
+    const u=new URL(url.startsWith('http')?url:'https://'+url);
+    const host=u.hostname.toLowerCase();
+    // WhatsApp
+    if(host.includes('whatsapp.com')||host.includes('wa.me')){
+      apps.push({name:'WhatsApp',icon:'💬',scheme:'whatsapp://send',desc:'Ouvrir dans l\'app WhatsApp'});
+    }
+    // YouTube
+    if(host.includes('youtube.com')||host.includes('youtu.be')){
+      const vid=u.searchParams.get('v')||u.pathname.replace('/','');
+      apps.push({name:'YouTube',icon:'▶️',scheme:'youtube://'+vid,desc:'Ouvrir dans l\'app YouTube'});
+    }
+    // Maps / Google Maps
+    if(host.includes('maps.google')||host.includes('goo.gl/maps')){
+      apps.push({name:'Google Maps',icon:'🗺️',scheme:'comgooglemaps://'+u.search,desc:'Ouvrir dans Google Maps'});
+      apps.push({name:'Plans (Apple)',icon:'🗺️',scheme:'maps://'+u.search,desc:'Ouvrir dans Plans iOS'});
+    }
+    // Instagram
+    if(host.includes('instagram.com')){
+      apps.push({name:'Instagram',icon:'📸',scheme:'instagram://user?username='+u.pathname.replace(/\//g,''),desc:'Ouvrir dans Instagram'});
+    }
+    // Twitter/X
+    if(host.includes('twitter.com')||host.includes('x.com')){
+      apps.push({name:'X (Twitter)',icon:'𝕏',scheme:'twitter://'+u.pathname,desc:'Ouvrir dans X'});
+    }
+    // Telegram
+    if(host.includes('t.me')||host.includes('telegram')){
+      apps.push({name:'Telegram',icon:'✈️',scheme:'tg://resolve?domain='+u.pathname.replace('/',''),desc:'Ouvrir dans Telegram'});
+    }
+    // Spotify
+    if(host.includes('spotify.com')){
+      apps.push({name:'Spotify',icon:'🎵',scheme:'spotify:'+url,desc:'Ouvrir dans Spotify'});
+    }
+    // FaceTime / Appels
+    if(host.includes('facetime')){
+      apps.push({name:'FaceTime',icon:'📹',scheme:'facetime:'+u.pathname,desc:'Ouvrir FaceTime'});
+    }
+  }catch(e){}
+  return apps;
+}
+
+function openUrlWithAppChoice(url,label){
+  const fullUrl=url.startsWith('http')?url:'https://'+url;
+  const apps=detectApps(fullUrl);
+  if(!apps.length){
+    // Pas d'app détectée → ouverture directe navigateur
+    window.open(fullUrl,'_blank');
+    return;
+  }
+  // Afficher le modal de choix
+  document.getElementById('appOpenTitle').textContent='Ouvrir : '+(label||fullUrl);
+  document.getElementById('appOpenUrl').textContent=fullUrl;
+  const list=document.getElementById('appOpenList');
+  list.innerHTML='';
+  // Option navigateur toujours présente
+  const allChoices=[
+    ...apps,
+    {name:'Navigateur',icon:'🌐',scheme:fullUrl,desc:'Ouvrir dans le navigateur',isBrowser:true}
+  ];
+  allChoices.forEach(app=>{
+    const item=document.createElement('div');item.className='app-open-item';
+    item.innerHTML=`<div class="app-open-icon">${app.icon}</div>
+      <div class="app-open-info"><div class="app-open-name">${app.name}</div><div class="app-open-desc">${app.desc}</div></div>
+      <div style="color:var(--gold);font-size:14px">→</div>`;
+    item.addEventListener('click',()=>{
+      document.getElementById('appOpenModal').classList.remove('open');
+      if(app.isBrowser){window.open(fullUrl,'_blank');return;}
+      // Tenter l'ouverture dans l'app via le scheme
+      const iframe=document.createElement('iframe');
+      iframe.style.display='none';iframe.src=app.scheme;
+      document.body.appendChild(iframe);
+      // Fallback navigateur après 2s si l'app n'est pas installée
+      setTimeout(()=>{iframe.remove();},2000);
+      // Sur mobile, essayer aussi location.href
+      if(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){
+        setTimeout(()=>{window.location.href=app.scheme;},100);
+        setTimeout(()=>{window.open(fullUrl,'_blank');},1500);
+      } else {
+        window.open(fullUrl,'_blank');
+      }
+    });
+    list.appendChild(item);
+  });
+  document.getElementById('appOpenModal').classList.add('open');
+}
+
 function redirectUser(user){
   const urls=user.urls||[];
   if(!urls.length){toast('Aucune URL configurée','err');return}
-  if(urls.length===1){const h=urls[0].href;window.open(h.startsWith('http')?h:'https://'+h,'_blank');return}
+  if(urls.length===1){
+    const u=urls[0];
+    openUrlWithAppChoice(u.href,u.label||u.href);
+    return;
+  }
   document.getElementById('redirectTitle').textContent='Bonjour, '+user.name+' 👋';
   const list=document.getElementById('redirectList');list.innerHTML='';
   urls.forEach(u=>{
     const item=document.createElement('div');item.className='redirect-item';
     item.innerHTML=`<div><div class="ri-label">${esc(u.label||u.href)}</div><div class="ri-url">${esc(u.href)}</div></div><div class="ri-arrow">→</div>`;
     item.addEventListener('click',()=>{
-      const h=u.href.startsWith('http')?u.href:'https://'+u.href;
-      window.open(h,'_blank');document.getElementById('redirectModal').classList.remove('open');
+      document.getElementById('redirectModal').classList.remove('open');
+      openUrlWithAppChoice(u.href,u.label||u.href);
     });
     list.appendChild(item);
   });
@@ -896,6 +1031,8 @@ function redirectUser(user){
 }
 document.getElementById('redirectClose').addEventListener('click',()=>document.getElementById('redirectModal').classList.remove('open'));
 document.getElementById('redirectModal').addEventListener('click',e=>{if(e.target===document.getElementById('redirectModal'))document.getElementById('redirectModal').classList.remove('open')});
+document.getElementById('appOpenClose').addEventListener('click',()=>document.getElementById('appOpenModal').classList.remove('open'));
+document.getElementById('appOpenModal').addEventListener('click',e=>{if(e.target===document.getElementById('appOpenModal'))document.getElementById('appOpenModal').classList.remove('open')});
 
 // ══ LOGIN ══
 function doLogin(){
@@ -1542,7 +1679,40 @@ function cePreview(code){
 
 // Events
 document.getElementById('ceNewBtn').addEventListener('click',()=>{ceClear();document.getElementById('ceTitleInput').focus();});
+document.getElementById('cePlayFullBtn').addEventListener('click',()=>{
+  document.getElementById('ceFullscreenBtn').click();
+});
 document.getElementById('ceClosePreview').addEventListener('click',()=>{document.getElementById('cePreviewCard').style.display='none';});
+
+// ── Plein écran ──
+let _ceFsCode='';
+document.getElementById('ceFullscreenBtn').addEventListener('click',()=>{
+  const code=document.getElementById('ceEditor').value.trim();
+  if(!code){toast('Éditeur vide','err');return;}
+  _ceFsCode=code;
+  const title=document.getElementById('ceTitleInput').value||'Lecteur';
+  document.getElementById('ceFullscreenTitle').textContent='▶ '+title;
+  const frame=document.getElementById('ceFsFrame');
+  const doc=frame.contentDocument||frame.contentWindow.document;
+  doc.open();doc.write(code);doc.close();
+  document.getElementById('ceFullscreen').classList.add('open');
+});
+document.getElementById('ceFsClose').addEventListener('click',()=>{
+  document.getElementById('ceFullscreen').classList.remove('open');
+  const frame=document.getElementById('ceFsFrame');
+  try{const doc=frame.contentDocument||frame.contentWindow.document;doc.open();doc.write('');doc.close();}catch(e){}
+});
+document.getElementById('ceFsReload').addEventListener('click',()=>{
+  const frame=document.getElementById('ceFsFrame');
+  const doc=frame.contentDocument||frame.contentWindow.document;
+  doc.open();doc.write(_ceFsCode);doc.close();
+});
+// Touche Escape pour fermer
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&document.getElementById('ceFullscreen').classList.contains('open')){
+    document.getElementById('ceFullscreen').classList.remove('open');
+  }
+});
 
 document.getElementById('ceSaveBtn').addEventListener('click',()=>{
   const title=document.getElementById('ceTitleInput').value.trim();
