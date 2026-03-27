@@ -267,7 +267,53 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
 .note-audio-del:hover{opacity:1}
 .note-card-images{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
 .note-card-img{width:36px;height:36px;object-fit:cover;border-radius:5px;border:1px solid var(--border)}
-/* ── MATRICULE ── */
+/* ════ RESTORE PICKER MODAL ════ */
+.restore-list{display:flex;flex-direction:column;gap:8px;max-height:320px;overflow-y:auto;margin:1rem 0}
+.restore-item{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--rs);padding:12px 14px;cursor:pointer;transition:all .2s}
+.restore-item:hover{border-color:var(--gold);background:var(--gold-dim);transform:translateX(2px)}
+.restore-item-date{font-size:13px;font-weight:500;flex:1}
+.restore-item-sub{font-size:11px;color:var(--muted)}
+.restore-item-size{font-size:10px;color:var(--dim);flex-shrink:0;font-family:monospace}
+.restore-arrow{color:var(--gold);font-size:16px;flex-shrink:0}
+.restore-loading{text-align:center;padding:2rem;color:var(--muted);font-size:13px}
+.restore-spinner{width:20px;height:20px;border:2px solid rgba(255,255,255,.1);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;display:inline-block;margin-bottom:.75rem}
+.fb-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:1.25rem;flex-wrap:wrap}
+.fb-filter{display:flex;gap:3px;background:var(--surface);border:1px solid var(--border);border-radius:100px;padding:3px}
+.fb-btn{background:none;border:none;border-radius:100px;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:12px;padding:5px 12px;cursor:pointer;transition:all .2s}
+.fb-btn.active{background:var(--surface2);color:var(--text)}
+.fb-list{display:flex;flex-direction:column;gap:10px}
+.fb-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:1.15rem 1.25rem;transition:border-color .2s}
+.fb-card:hover{border-color:var(--border2)}
+.fb-card-head{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px}
+.fb-avatar{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;flex-shrink:0}
+.fb-meta{flex:1;min-width:0}
+.fb-author{font-size:13px;font-weight:500}
+.fb-date{font-size:10px;color:var(--dim)}
+.fb-type{font-size:9px;letter-spacing:.12em;text-transform:uppercase;padding:2px 7px;border-radius:10px;flex-shrink:0}
+.fb-type.suggestion{background:rgba(91,155,213,.15);color:var(--info);border:1px solid rgba(91,155,213,.2)}
+.fb-type.bug{background:rgba(224,82,82,.12);color:var(--danger);border:1px solid rgba(224,82,82,.2)}
+.fb-type.amélioration{background:rgba(201,168,76,.13);color:var(--gold);border:1px solid rgba(201,168,76,.2)}
+.fb-type.autre{background:rgba(255,255,255,.06);color:var(--muted);border:1px solid var(--border)}
+.fb-status{font-size:9px;letter-spacing:.1em;text-transform:uppercase;padding:2px 7px;border-radius:10px;flex-shrink:0;cursor:pointer;transition:all .2s}
+.fb-status.nouveau{background:rgba(232,202,120,.12);color:#e8ca78;border:1px solid rgba(232,202,120,.2)}
+.fb-status.lu{background:rgba(255,255,255,.05);color:var(--muted);border:1px solid var(--border)}
+.fb-status.traité{background:var(--ok-bg);color:var(--ok);border:1px solid rgba(90,184,126,.2)}
+.fb-message{font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:8px}
+.fb-reply{background:rgba(201,168,76,.05);border:1px solid rgba(201,168,76,.15);border-radius:var(--rs);padding:9px 12px;font-size:12px;color:var(--muted);margin-top:6px;line-height:1.6}
+.fb-reply-label{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);margin-bottom:3px}
+.fb-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.fb-reply-area{display:none;margin-top:8px}
+.fb-reply-area.open{display:block;animation:fadeDown .15s ease}
+.fb-reply-area textarea{width:100%;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font-family:'DM Sans',sans-serif;font-size:12px;padding:10px 12px;outline:none;resize:none;height:72px;line-height:1.6;transition:border-color .2s}
+.fb-reply-area textarea:focus{border-color:var(--focus)}
+.fb-reply-area-actions{display:flex;gap:7px;margin-top:6px;justify-content:flex-end}
+.fb-count-badge{min-width:17px;height:17px;border-radius:9px;background:var(--danger);color:white;font-size:10px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;padding:0 5px;margin-left:4px;vertical-align:middle;line-height:1}
+/* Feedback submit form (user side) */
+.fb-submit-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:1.25rem;margin-bottom:1.25rem}
+.fb-type-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.fb-type-btn{background:var(--surface);border:1px solid var(--border);border-radius:100px;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:11px;padding:6px 13px;cursor:pointer;transition:all .2s}
+.fb-type-btn:hover{border-color:var(--border2);color:var(--text)}
+.fb-type-btn.sel{border-color:rgba(91,155,213,.4);background:rgba(91,155,213,.1);color:var(--info)}
 .note-matricule{font-size:9px;letter-spacing:.12em;font-family:monospace;color:var(--dim);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:2px 6px;border-radius:4px;flex-shrink:0}
 
 /* ── DRAG HANDLE ── */
@@ -452,6 +498,20 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
   </div>
 </div>
 
+<!-- RESTORE PICKER MODAL -->
+<div class="overlay" id="restoreModal">
+  <div class="modal-box" style="max-width:440px">
+    <div class="modal-title">📂 Choisir une sauvegarde</div>
+    <div class="modal-sub">Sélectionnez la version à restaurer. Les données locales seront remplacées.</div>
+    <div class="restore-list" id="restoreList">
+      <div class="restore-loading"><div class="restore-spinner"></div><br>Chargement des sauvegardes…</div>
+    </div>
+    <div style="text-align:right;margin-top:.5rem">
+      <button class="btn-ghost" id="restoreModalClose">Annuler</button>
+    </div>
+  </div>
+</div>
+
 <!-- ADMIN -->
 <div class="screen" id="adminScreen">
   <div class="adm-header">
@@ -475,6 +535,10 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
         <svg viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
         <span>Sécurité</span>
       </button>
+      <button class="nav-tab" data-tab="feedback">
+        <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
+        <span>Retours <span id="fbNewBadge" style="display:none" class="fb-count-badge">0</span></span>
+      </button>
     </div>
     <button class="btn-logout" id="logoutBtn">Déconnexion</button>
   </div>
@@ -487,10 +551,10 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
       <span class="drive-count" id="driveCount" style="display:none"></span>
       <div class="drive-saving" id="driveSaving"><div class="drive-saving-dot"></div>⏳ Sauvegarde…</div>
     </div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
-      <button class="btn-ghost" id="driveSaveBtn" style="font-size:11px;padding:6px 12px;display:none">☁️ Sauvegarder</button>
-      <button class="btn-ghost" id="driveLoadBtn" style="font-size:11px;padding:6px 12px;display:none">⬇️ Restaurer</button>
-      <button class="btn-ghost" id="driveConnectBtn" style="font-size:11px;padding:6px 12px">Connecter Drive</button>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;align-items:center">
+      <button class="btn-ghost" id="driveConnectBtn" style="font-size:11px;padding:6px 12px">🔗 Connecter Drive</button>
+      <button class="btn-gold"  id="driveSaveBtn"    style="font-size:11px;padding:6px 14px;display:none">☁️ Sauvegarder</button>
+      <button class="btn-ghost" id="driveLoadBtn"    style="font-size:11px;padding:6px 12px;display:none">📂 Restaurer…</button>
       <button class="btn-danger" id="driveDisconnectBtn" style="font-size:11px;padding:6px 12px;display:none">Déconnecter</button>
     </div>
   </div>
@@ -563,6 +627,46 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
     </div>
   </div>
 
+  <!-- TAB FEEDBACK -->
+  <div class="tab-panel" id="tab-feedback">
+    <!-- Formulaire de soumission (pour l'admin qui simule un utilisateur) -->
+    <div class="fb-submit-card">
+      <div class="card-title">Soumettre un retour</div>
+      <div style="margin-bottom:10px">
+        <label class="s-label">Utilisateur</label>
+        <select class="s-input" id="fbUserSelect" style="margin-top:6px">
+          <option value="__admin__">Administrateur</option>
+        </select>
+      </div>
+      <div class="fb-type-row" id="fbTypeRow">
+        <button class="fb-type-btn sel" data-type="suggestion">💡 Suggestion</button>
+        <button class="fb-type-btn" data-type="bug">🐛 Problème</button>
+        <button class="fb-type-btn" data-type="amélioration">⚡ Amélioration</button>
+        <button class="fb-type-btn" data-type="autre">💬 Autre</button>
+      </div>
+      <textarea class="s-input" id="fbMessage" placeholder="Décrivez votre suggestion, problème ou idée d'amélioration…" style="min-height:80px;margin-bottom:10px"></textarea>
+      <div style="display:flex;justify-content:flex-end">
+        <button class="btn-gold" id="fbSubmitBtn">Envoyer le retour</button>
+      </div>
+    </div>
+
+    <!-- Liste admin des retours -->
+    <div class="fb-toolbar">
+      <div class="fb-filter">
+        <button class="fb-btn active" data-fbf="tous">Tous</button>
+        <button class="fb-btn" data-fbf="nouveau">Nouveaux</button>
+        <button class="fb-btn" data-fbf="traité">Traités</button>
+      </div>
+      <div style="margin-left:auto;font-size:11px;color:var(--muted)" id="fbCount"></div>
+    </div>
+    <div id="fbList" class="fb-list"></div>
+    <div class="empty-state" id="fbEmpty" style="display:none">
+      <div style="font-size:2rem;margin-bottom:.5rem">💬</div>
+      <div>Aucun retour pour l'instant</div>
+      <div style="font-size:11px;margin-top:4px;color:var(--dim)">Les retours des utilisateurs apparaîtront ici</div>
+    </div>
+  </div>
+
   <!-- TAB SECURITY -->
   <div class="tab-panel" id="tab-security">
     <div class="card">
@@ -611,6 +715,9 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
 <div class="lightbox" id="lightbox"><img id="lightboxImg" src="" alt=""></div>
 
 <script>
+document.getElementById('restoreModalClose').addEventListener('click',()=>document.getElementById('restoreModal').classList.remove('open'));
+document.getElementById('restoreModal').addEventListener('click',e=>{if(e.target===document.getElementById('restoreModal'))document.getElementById('restoreModal').classList.remove('open')});
+
 // ── PWA early capture ──
 let _pwaPrompt=null;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();_pwaPrompt=e;const b=document.getElementById('pwaInstallBtn');if(b)b.classList.add('visible');});
@@ -694,6 +801,7 @@ function doLogin(){
     document.getElementById('gConfigStatus').textContent=config.gClientId?'✓ Identifiants configurés':'';
     showScreen('admin');document.getElementById('pwdInput').value='';
     if(!window._driveReady){window._driveReady=true;driveInit();}
+    feedbacks=loadFeedbacks();updateFbBadge();
     return;
   }
   const user=config.users.find(u=>u.pwd===val);
@@ -711,6 +819,7 @@ document.querySelectorAll('.nav-tab').forEach(btn=>{
     document.querySelectorAll('.nav-tab').forEach(b=>b.classList.remove('active'));
     document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
     btn.classList.add('active');document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+    if(btn.dataset.tab==='feedback')initFeedbackTab();
   });
 });
 
@@ -1294,24 +1403,88 @@ const GDriveModule=(function(){
   }
 
   async function restore(){
-    if(!confirm('Restaurer depuis Drive ? Les données locales seront remplacées.'))return;
-    setSaving(true);
+    // Ouvrir le modal et charger la liste des versions
+    const modal=document.getElementById('restoreModal');
+    const list=document.getElementById('restoreList');
+    modal.classList.add('open');
+    list.innerHTML='<div class="restore-loading"><div class="restore-spinner"></div><br>Chargement des sauvegardes…</div>';
+
     try{
+      // Chercher TOUTES les versions du fichier de sauvegarde
       let q=`name='portail_backup.json' and trashed=false`;
       if(folderId)q+=` and '${folderId}' in parents`;
-      const sr=await gFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,modifiedTime)&orderBy=modifiedTime desc`);
-      const sd=await sr.json();const file=(sd.files||[])[0];
-      if(!file){toast('Aucune sauvegarde trouvée','err');return}
-      const fr=await gFetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`);
-      const d=await fr.json();
-      if(d.config){Object.assign(config,d.config);saveConfig(config)}
-      if(d.notes){notes=d.notes;saveNotes(notes)}
-      renderUserList();renderNotes();
-      document.getElementById('gClientId').value=config.gClientId||'';
-      document.getElementById('gApiKey').value=config.gApiKey||'';
-      toast('✅ Données restaurées depuis Drive','info');
-    }catch(e){toast('Erreur Drive : '+e.message,'err')}
-    finally{setSaving(false)}
+      const sr=await gFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime,size,version)&orderBy=modifiedTime desc`);
+      const sd=await sr.json();
+      const files=sd.files||[];
+
+      // Pour chaque fichier, récupérer ses révisions
+      let versions=[];
+      for(const file of files){
+        try{
+          const rv=await gFetch(`https://www.googleapis.com/drive/v3/files/${file.id}/revisions?fields=revisions(id,modifiedTime,size)`);
+          const rd=await rv.json();
+          const revs=rd.revisions||[];
+          if(revs.length>0){
+            revs.reverse().forEach((rev,i)=>{
+              versions.push({fileId:file.id,revId:rev.id,modifiedTime:rev.modifiedTime,size:rev.size,isLatest:i===0,versionNum:revs.length-i});
+            });
+          } else {
+            // fallback si révisions non disponibles
+            versions.push({fileId:file.id,revId:null,modifiedTime:file.modifiedTime,size:file.size,isLatest:true,versionNum:1});
+          }
+        }catch{
+          versions.push({fileId:file.id,revId:null,modifiedTime:file.modifiedTime,size:file.size,isLatest:true,versionNum:1});
+        }
+      }
+
+      if(!versions.length){
+        list.innerHTML='<div class="restore-loading">Aucune sauvegarde trouvée</div>';
+        return;
+      }
+
+      // Trier par date décroissante
+      versions.sort((a,b)=>new Date(b.modifiedTime)-new Date(a.modifiedTime));
+
+      list.innerHTML='';
+      versions.forEach((v,idx)=>{
+        const d=new Date(v.modifiedTime);
+        const dateStr=d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+        const timeStr=d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+        const sizeKb=v.size?Math.round(parseInt(v.size)/1024)+'kb':'';
+        const item=document.createElement('div');item.className='restore-item';
+        item.innerHTML=`
+          <div style="flex-shrink:0;width:32px;height:32px;border-radius:8px;background:${idx===0?'var(--gold-dim)':'var(--surface2)'};display:flex;align-items:center;justify-content:center;font-size:14px">${idx===0?'⭐':'🕐'}</div>
+          <div style="flex:1;min-width:0">
+            <div class="restore-item-date">${dateStr}</div>
+            <div class="restore-item-sub">${timeStr}${v.isLatest&&idx===0?' · Version la plus récente':''}${sizeKb?' · '+sizeKb:''}</div>
+          </div>
+          <div class="restore-arrow">→</div>`;
+        item.addEventListener('click',async()=>{
+          if(!confirm('Restaurer cette version du '+dateStr+' à '+timeStr+' ?\n\nLes données actuelles seront remplacées.'))return;
+          modal.classList.remove('open');
+          setSaving(true);
+          try{
+            let fr;
+            if(v.revId){
+              fr=await gFetch(`https://www.googleapis.com/drive/v3/files/${v.fileId}/revisions/${v.revId}?alt=media`);
+            } else {
+              fr=await gFetch(`https://www.googleapis.com/drive/v3/files/${v.fileId}?alt=media`);
+            }
+            const dt=await fr.json();
+            if(dt.config){Object.assign(config,dt.config);saveConfig(config)}
+            if(dt.notes){notes=dt.notes;saveNotes(notes)}
+            renderUserList();renderNotes();
+            document.getElementById('gClientId').value=config.gClientId||'';
+            document.getElementById('gApiKey').value=config.gApiKey||'';
+            toast('✅ Restauré depuis le '+dateStr+' à '+timeStr,'info');
+          }catch(e){toast('Erreur restauration : '+e.message,'err')}
+          finally{setSaving(false)}
+        });
+        list.appendChild(item);
+      });
+    }catch(e){
+      list.innerHTML='<div class="restore-loading">Erreur : '+esc(e.message)+'</div>';
+    }
   }
 
   async function createFolder(){
@@ -1339,7 +1512,7 @@ const GDriveModule=(function(){
     try{
       tokenClient=google.accounts.oauth2.initTokenClient({
         client_id:config.gClientId,
-        scope:'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
+        scope:'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive',
         callback:async resp=>{
           if(resp.error){
             setStatus('off');
@@ -1406,6 +1579,165 @@ const GDriveModule=(function(){
   }
   return{init};
 })();
+
+// ══ FEEDBACK ══
+const FBK='portail_feedback_v1';
+function loadFeedbacks(){try{return JSON.parse(localStorage.getItem(FBK))||[]}catch{return[]}}
+function saveFeedbacks(f){localStorage.setItem(FBK,JSON.stringify(f))}
+let feedbacks=loadFeedbacks();
+let fbFilter='tous';
+let fbSelectedType='suggestion';
+
+function fbUserColor(name){
+  const colors=['#c9a84c','#5ab87e','#5b9bd5','#d96c6c','#a07ed1','#d97b3a','#3abcd9'];
+  let h=0;for(let i=0;i<name.length;i++)h=(h*31+name.charCodeAt(i))&0xffff;
+  return colors[h%colors.length];
+}
+function fbInitials(name){return name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2)}
+
+function populateFbUserSelect(){
+  const sel=document.getElementById('fbUserSelect');
+  sel.innerHTML='<option value="__admin__">👤 Administrateur</option>';
+  config.users.forEach(u=>{
+    const o=document.createElement('option');o.value=u.id;o.textContent='👤 '+u.name;
+    sel.appendChild(o);
+  });
+}
+
+function updateFbBadge(){
+  const newCount=feedbacks.filter(f=>f.status==='nouveau').length;
+  const badge=document.getElementById('fbNewBadge');
+  if(!badge)return;
+  if(newCount>0){badge.textContent=newCount;badge.style.display=''}
+  else badge.style.display='none';
+}
+
+function renderFeedbacks(){
+  const list=document.getElementById('fbList'),empty=document.getElementById('fbEmpty'),cnt=document.getElementById('fbCount');
+  let fb=[...feedbacks].sort((a,b)=>b.created-a.created);
+  if(fbFilter!=='tous')fb=fb.filter(f=>f.status===fbFilter);
+  cnt.textContent=fb.length+' retour'+(fb.length!==1?'s':'');
+  if(!fb.length){list.innerHTML='';empty.style.display='block';return}
+  empty.style.display='none';list.innerHTML='';
+
+  fb.forEach(f=>{
+    const color=fbUserColor(f.userName);
+    const bg=hRgba(color,.14);
+    const card=document.createElement('div');card.className='fb-card';card.dataset.id=f.id;
+    card.innerHTML=`
+      <div class="fb-card-head">
+        <div class="fb-avatar" style="background:${bg};color:${color}">${fbInitials(f.userName)}</div>
+        <div class="fb-meta">
+          <div class="fb-author">${esc(f.userName)}</div>
+          <div class="fb-date">${fmtDate(f.created)}</div>
+        </div>
+        <span class="fb-type ${f.type}">${typeLabel(f.type)}</span>
+        <span class="fb-status ${f.status}" title="Cliquer pour changer le statut" data-id="${f.id}">${statusLabel(f.status)}</span>
+      </div>
+      <div class="fb-message">${esc(f.message)}</div>
+      ${f.reply?`<div class="fb-reply"><div class="fb-reply-label">Réponse admin</div>${esc(f.reply)}</div>`:''}
+      <div class="fb-actions">
+        <button class="btn-ghost reply-toggle-btn" data-id="${f.id}" style="font-size:11px;padding:6px 11px">✏️ ${f.reply?'Modifier la réponse':'Répondre'}</button>
+        <button class="btn-danger fb-del-btn" data-id="${f.id}" style="font-size:11px;padding:6px 10px">🗑️</button>
+      </div>
+      <div class="fb-reply-area" id="fbra_${f.id}">
+        <textarea placeholder="Votre réponse à cet utilisateur…">${esc(f.reply||'')}</textarea>
+        <div class="fb-reply-area-actions">
+          <button class="btn-ghost fbra-cancel" data-id="${f.id}" style="font-size:11px;padding:6px 11px">Annuler</button>
+          <button class="btn-gold fbra-save" data-id="${f.id}" style="font-size:11px;padding:6px 14px">Enregistrer</button>
+        </div>
+      </div>`;
+    list.appendChild(card);
+  });
+
+  // Events
+  list.querySelectorAll('.fb-status').forEach(el=>{
+    el.addEventListener('click',()=>{
+      const id=el.dataset.id,f=feedbacks.find(x=>x.id===id);if(!f)return;
+      const cycle={nouveau:'lu',lu:'traité',traité:'nouveau'};
+      f.status=cycle[f.status]||'nouveau';
+      saveFeedbacks(feedbacks);renderFeedbacks();updateFbBadge();
+    });
+  });
+  list.querySelectorAll('.reply-toggle-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const area=document.getElementById('fbra_'+btn.dataset.id);
+      area.classList.toggle('open');
+      if(area.classList.contains('open'))area.querySelector('textarea').focus();
+    });
+  });
+  list.querySelectorAll('.fbra-cancel').forEach(btn=>{
+    btn.addEventListener('click',()=>document.getElementById('fbra_'+btn.dataset.id).classList.remove('open'));
+  });
+  list.querySelectorAll('.fbra-save').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const id=btn.dataset.id,f=feedbacks.find(x=>x.id===id);if(!f)return;
+      f.reply=document.getElementById('fbra_'+id).querySelector('textarea').value.trim();
+      if(f.status==='nouveau')f.status='lu';
+      saveFeedbacks(feedbacks);renderFeedbacks();updateFbBadge();
+      toast('Réponse enregistrée','info');
+    });
+  });
+  list.querySelectorAll('.fb-del-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      if(!confirm('Supprimer ce retour ?'))return;
+      feedbacks=feedbacks.filter(x=>x.id!==btn.dataset.id);
+      saveFeedbacks(feedbacks);renderFeedbacks();updateFbBadge();
+      toast('Retour supprimé');
+    });
+  });
+}
+
+function typeLabel(t){const m={suggestion:'💡 Suggestion',bug:'🐛 Problème',amélioration:'⚡ Amélioration',autre:'💬 Autre'};return m[t]||t}
+function statusLabel(s){const m={nouveau:'🔴 Nouveau',lu:'👁️ Lu',traité:'✅ Traité'};return m[s]||s}
+
+// Type selector
+document.getElementById('fbTypeRow').addEventListener('click',e=>{
+  const btn=e.target.closest('.fb-type-btn');if(!btn)return;
+  document.querySelectorAll('.fb-type-btn').forEach(b=>b.classList.remove('sel'));
+  btn.classList.add('sel');fbSelectedType=btn.dataset.type;
+});
+
+// Filter
+document.querySelectorAll('.fb-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.fb-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');fbFilter=btn.dataset.fbf;renderFeedbacks();
+  });
+});
+
+// Submit feedback
+document.getElementById('fbSubmitBtn').addEventListener('click',()=>{
+  const msg=document.getElementById('fbMessage').value.trim();
+  if(!msg){toast('Rédigez votre retour avant d\'envoyer','err');return}
+  const selEl=document.getElementById('fbUserSelect');
+  const userId=selEl.value;
+  let userName='Administrateur';
+  if(userId!=='__admin__'){
+    const u=config.users.find(x=>x.id===userId);
+    if(u)userName=u.name;
+  }
+  feedbacks.unshift({
+    id:uid(),
+    userId,userName,
+    type:fbSelectedType,
+    message:msg,
+    status:'nouveau',
+    created:Date.now(),
+    reply:''
+  });
+  saveFeedbacks(feedbacks);
+  document.getElementById('fbMessage').value='';
+  renderFeedbacks();updateFbBadge();
+  toast('✅ Retour envoyé — merci !');
+});
+
+function initFeedbackTab(){
+  feedbacks=loadFeedbacks();
+  populateFbUserSelect();
+  renderFeedbacks();
+  updateFbBadge();
+}
 
 function driveInit(){GDriveModule.init()}
 (function(){
