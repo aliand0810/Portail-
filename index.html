@@ -1463,7 +1463,7 @@ recBtn.addEventListener('click',async()=>{
 // ══ CODE EDITOR ══
 const CEK='portail_snippets_v1';
 function loadSnippets(){try{return JSON.parse(localStorage.getItem(CEK))||[]}catch{return[]}}
-function saveSnippets(s){localStorage.setItem(CEK,JSON.stringify(s))}
+function saveSnippets(s){localStorage.setItem(CEK,JSON.stringify(s));if(typeof triggerAutoSave==='function')triggerAutoSave();}
 let snippets=loadSnippets();
 let curSnippetId=null;
 
@@ -1473,7 +1473,7 @@ function ceAutoSave(){
     const ind=document.getElementById('ceAutoSaveIndicator');
     if(ind){ind.classList.add('show');setTimeout(()=>ind.classList.remove('show'),2000);}
     // Déclencher sauvegarde Drive si connecté
-    if(window._gdConnectedFlag&&window.gdriveSaveNow) window.gdriveSaveNow();
+    if(window._gdConnected&&window.gdriveSaveNow) window.gdriveSaveNow();
   },1500);
 }
 
@@ -1632,7 +1632,7 @@ document.getElementById('ceAiAppend').addEventListener('click',()=>{
 // Déclenchée 3s après toute modification de config, notes, snippets ou feedbacks
 let _autoSaveTimer=null;
 function triggerAutoSave(){
-  if(!window._gdConnectedFlag) return;
+  if(!window._gdConnected) return;
   clearTimeout(_autoSaveTimer);
   _autoSaveTimer=setTimeout(async()=>{
     if(window.gdriveSaveNow){
@@ -1646,16 +1646,9 @@ const _origSaveConfig=saveConfig;
 window.saveConfig=function(c){_origSaveConfig(c);triggerAutoSave();};
 const _origSaveNotes=saveNotes;
 window.saveNotes=function(n){_origSaveNotes(n);triggerAutoSave();};
-const _origSaveSnippets=saveSnippets;
-function saveSnippets(s){localStorage.setItem(CEK,JSON.stringify(s));triggerAutoSave();}
+// saveSnippets already calls triggerAutoSave via its definition above
 const _origSaveFeedbacks=saveFeedbacks;
 window.saveFeedbacks=function(f){_origSaveFeedbacks(f);triggerAutoSave();};
-
-// Flag Drive connecté — mis à jour par le module Drive
-Object.defineProperty(window,'_gdConnectedFlag',{
-  get:()=>typeof _gdConnected!=='undefined'&&_gdConnected,
-  configurable:true
-});
 
 // ══ GOOGLE DRIVE — Copié depuis COVO Pro ══
 (function(){
@@ -1731,57 +1724,79 @@ Object.defineProperty(window,'_gdConnectedFlag',{
   window.gdriveConnect = async function(){
     const clientId=(config.gClientId||'').trim()||(localStorage.getItem('gdrive_client_id')||'');
     if(!clientId){
-      toast('⚠️ Entrez votre Client ID Google dans l\u0027onglet Sécurité','err');
+      toast('Entrez votre Client ID Google dans l\'onglet Sécurité','err');
       return;
     }
     localStorage.setItem('gdrive_client_id',clientId);
-    try{
-      _gdUpdateStatusBar(false,'Google Drive — Connexion…');
-      await _gdLoadGIS();
+    _gdUpdateStatusBar(false,'Google Drive — Connexion…');
 
+    async function onTokenReceived(accessToken){
+      _gdAccessToken=accessToken;
+      _gdConnected=true;
+      window._gdConnected=true;
+      localStorage.setItem('gdrive_connected','1');
+      try{
+        const info=await fetch('https://www.googleapis.com/oauth2/v2/userinfo',{
+          headers:{Authorization:'Bearer '+_gdAccessToken}
+        }).then(r=>r.json());
+        _gdUserEmail=info.email||'';
+        localStorage.setItem('gdrive_email',_gdUserEmail);
+      }catch(e){}
+      _gdUpdateUI(true);
+      _gdUpdateStatusBar(true,'☁️ Drive connecté — '+(_gdUserEmail||'Connecté'));
+      const em=document.getElementById('driveEmail');
+      if(em){em.textContent=_gdUserEmail;em.style.display='';}
+      await _gdLoadFolders();
+      await _gdRestoreSavedFolder();
+      toast('✅ Google Drive connecté — '+_gdUserEmail,'info');
+    }
+
+    // Stratégie 1 : GIS library
+    try{
+      await _gdLoadGIS();
       _gdTokenClient=google.accounts.oauth2.initTokenClient({
         client_id:clientId,
         scope:GD_SCOPE,
         callback:async(resp)=>{
-          if(resp.error){
-            _gdUpdateStatusBar(false,'Google Drive — Erreur d’auth');
-            toast('❌ Erreur de connexion Google Drive : '+resp.error,'err');
-            return;
-          }
-          _gdAccessToken=resp.access_token;
-          _gdConnected=true;
-          localStorage.setItem('gdrive_connected','1');
-
-          // Email utilisateur
-          try{
-            const info=await fetch('https://www.googleapis.com/oauth2/v2/userinfo',{
-              headers:{Authorization:'Bearer '+_gdAccessToken}
-            }).then(r=>r.json());
-            _gdUserEmail=info.email||'';
-            localStorage.setItem('gdrive_email',_gdUserEmail);
-          }catch(e){}
-
-          _gdUpdateUI(true);
-          _gdUpdateStatusBar(true,'☁️ Drive connecté — '+(_gdUserEmail||'Connecté'));
-
-          // Email dans la barre
-          const em=document.getElementById('driveEmail');
-          if(em){em.textContent=_gdUserEmail;em.style.display='';}
-
-          // Dossiers
-          await _gdLoadFolders();
-          await _gdRestoreSavedFolder();
-
-          toast('✅ Google Drive connecté — '+_gdUserEmail,'info');
+          if(resp.error){_gdUpdateStatusBar(false);toast('OAuth : '+resp.error,'err');return;}
+          await onTokenReceived(resp.access_token);
+        },
+        error_callback:(err)=>{
+          if(err&&err.type==='popup_closed'){_gdUpdateStatusBar(false);toast('Fenêtre fermée','info');}
+          else{_gdConnectPopup(clientId,onTokenReceived);}
         }
       });
       _gdTokenClient.requestAccessToken({prompt:''});
-    }catch(err){
-      _gdUpdateStatusBar(false,'Google Drive — Erreur');
-      toast('❌ '+err.message,'err');
+    }catch(e){
+      // GIS non dispo → popup natif
+      _gdConnectPopup(clientId,onTokenReceived);
     }
   };
 
+  function _gdConnectPopup(clientId,onSuccess){
+    const redirectUri=location.origin+location.pathname;
+    const params=new URLSearchParams({client_id:clientId,redirect_uri:redirectUri,response_type:'token',scope:GD_SCOPE,prompt:'select_account'});
+    const pw=520,ph=640,pl=Math.max(0,(screen.width-pw)/2),pt=Math.max(0,(screen.height-ph)/2);
+    const popup=window.open('https://accounts.google.com/o/oauth2/v2/auth?'+params,'_blank','width='+pw+',height='+ph+',left='+pl+',top='+pt+',toolbar=0,menubar=0,location=1');
+    if(!popup||popup.closed){_gdUpdateStatusBar(false);toast('Popup bloquée — autorisez les popups','err');return;}
+    let done=false;
+    const poll=setInterval(async()=>{
+      try{
+        if(popup.closed&&!done){clearInterval(poll);_gdUpdateStatusBar(false);toast('Connexion annulée','info');return;}
+        let href='';try{href=popup.location.href;}catch(_){return;}
+        if(href&&href.startsWith(redirectUri)){
+          clearInterval(poll);done=true;try{popup.close();}catch(_){}
+          const hash=new URLSearchParams((popup.location.hash||'').replace(/^#/,''));
+          const token=hash.get('access_token'),err=hash.get('error');
+          if(err){_gdUpdateStatusBar(false);toast('Google : '+err,'err');return;}
+          if(token) await onSuccess(token);
+        }
+      }catch(_){}
+    },300);
+    setTimeout(()=>{if(!done){clearInterval(poll);try{popup.close();}catch(_){}if(!_gdConnected)_gdUpdateStatusBar(false);}},180000);
+  }
+
+  
   // ---- Silent token refresh ----
   async function _gdRefreshToken(){
     if(!_gdTokenClient) return false;
@@ -2046,7 +2061,8 @@ Object.defineProperty(window,'_gdConnectedFlag',{
 
   // ---- Disconnect ----
   window.gdriveDisconnect=function(){
-    _gdConnected=false;_gdAccessToken=null;_gdFileId=null;
+    _gdConnected=false;
+    window._gdConnected=false;_gdAccessToken=null;_gdFileId=null;
     _gdFolderId=null;_gdFolderName='';_gdAllFolders=[];
     localStorage.removeItem('gdrive_connected');localStorage.removeItem('gdrive_last_save');
     localStorage.removeItem('gdrive_last_file');localStorage.removeItem('gdrive_email');
