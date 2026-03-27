@@ -685,7 +685,10 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button class="btn-gold" id="saveGConfig">Enregistrer</button>
         <div id="gConfigStatus" style="font-size:11px;color:var(--muted)"></div>
+        <button class="btn-ghost" id="gDiagBtn" style="font-size:11px;padding:7px 12px;margin-left:auto">🔍 Diagnostic</button>
       </div>
+      <!-- Diagnostic panel -->
+      <div id="gDiagPanel" style="display:none;margin-top:1rem;background:rgba(0,0,0,.25);border:1px solid var(--border);border-radius:var(--rs);padding:12px;font-size:12px;line-height:1.9;font-family:monospace;color:var(--muted)"></div>
       <div id="driveFolderSection" style="display:none;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
         <label class="s-label">Dossier de sauvegarde</label>
         <div class="drive-folder-row">
@@ -842,6 +845,27 @@ document.getElementById('saveGConfig').addEventListener('click',()=>{
   saveConfig(config);
   document.getElementById('gConfigStatus').textContent=config.gClientId?'✓ Enregistré — reconnectez Drive':'';
   toast('Configuration Google Drive enregistrée','info');
+});
+
+document.getElementById('gDiagBtn').addEventListener('click',()=>{
+  const panel=document.getElementById('gDiagPanel');
+  panel.style.display=panel.style.display==='none'?'block':'none';
+  if(panel.style.display==='none')return;
+  const clientId=(config.gClientId||'').trim();
+  const proto=location.protocol;
+  const origin=location.origin;
+  const redirectUri=location.origin+location.pathname;
+  const lines=[
+    (proto==='https:'?'✅':'❌')+' Protocole : '+proto+(proto!=='https:'?' ← HTTPS requis pour OAuth':''),
+    (clientId?'✅':'❌')+' Client ID : '+(clientId?clientId.slice(0,28)+'…':'non configuré'),
+    '📋 Origine à autoriser dans GCP : '+origin,
+    '📋 URI de redirection à autoriser : '+redirectUri,
+    '📋 Scopes : drive.file + userinfo.email',
+    '',
+    '→ Console GCP : APIs & Services → Identifiants → OAuth 2.0',
+    '→ Ajouter origin + redirect_uri dans les champs autorisés',
+  ];
+  panel.innerHTML=lines.map(l=>`<div>${l}</div>`).join('');
 });
 
 // ══ COLOR PICKER ══
@@ -1324,429 +1348,343 @@ recBtn.addEventListener('click',async()=>{
 });
 
 // ══ GOOGLE DRIVE ══
-const GDriveModule=(function(){
-  let token=null,userEmail='',folderId='',backupCount=0,tokenClient=null;
-  const led=()=>document.getElementById('driveLed');
-  const statusEl=()=>document.getElementById('driveStatus');
+const GDriveModule = (function () {
+  // ── état interne ──
+  let token = null, userEmail = '', folderId = '', backupCount = 0;
 
-  function setStatus(s){
-    const l=led();l.className='drive-led';
-    const em=document.getElementById('driveEmail'),cnt=document.getElementById('driveCount');
-    const sv=document.getElementById('driveSaveBtn'),ld=document.getElementById('driveLoadBtn');
-    const con=document.getElementById('driveConnectBtn'),dis=document.getElementById('driveDisconnectBtn');
-    const fs=document.getElementById('driveFolderSection');
-    if(s==='on'){l.classList.add('green');statusEl().textContent='Connecté';em.textContent=userEmail;em.style.display='';cnt.textContent=backupCount+' sauvegarde'+(backupCount!==1?'s':'');cnt.style.display='';con.style.display='none';dis.style.display='';sv.style.display='';ld.style.display='';if(fs)fs.style.display='block'}
-    else if(s==='busy'){l.classList.add('yellow','pulse');statusEl().textContent='Connexion…'}
-    else{l.classList.add(navigator.onLine?'':'red');statusEl().textContent=navigator.onLine?'Non connecté':'Hors ligne';em.style.display='none';cnt.style.display='none';con.style.display='';dis.style.display='none';sv.style.display='none';ld.style.display='none';if(fs)fs.style.display='none'}
+  // ── helpers DOM ──
+  const $  = id => document.getElementById(id);
+  const led = () => $('driveLed');
+  const stEl = () => $('driveStatus');
+
+  // ── statut visuel ──
+  function setStatus(s) {
+    const l = led(); l.className = 'drive-led';
+    const em=$('driveEmail'),cnt=$('driveCount'),sv=$('driveSaveBtn'),
+          ld=$('driveLoadBtn'),con=$('driveConnectBtn'),
+          dis=$('driveDisconnectBtn'),fs=$('driveFolderSection');
+    if (s === 'on') {
+      l.classList.add('green');
+      stEl().textContent = 'Connecté';
+      em.textContent = userEmail; em.style.display = '';
+      cnt.textContent = backupCount + ' sauvegarde' + (backupCount !== 1 ? 's' : '');
+      cnt.style.display = '';
+      con.style.display  = 'none';
+      dis.style.display  = '';
+      sv.style.display   = '';
+      ld.style.display   = '';
+      if (fs) fs.style.display = 'block';
+    } else if (s === 'busy') {
+      l.classList.add('yellow', 'pulse');
+      stEl().textContent = 'Connexion…';
+    } else {
+      l.classList.add(navigator.onLine ? '' : 'red');
+      stEl().textContent = navigator.onLine ? 'Non connecté' : 'Hors ligne';
+      em.style.display   = 'none';
+      cnt.style.display  = 'none';
+      con.style.display  = '';
+      dis.style.display  = 'none';
+      sv.style.display   = 'none';
+      ld.style.display   = 'none';
+      if (fs) fs.style.display = 'none';
+    }
   }
 
-  function setSaving(on){document.getElementById('driveSaving').classList.toggle('on',on);if(!on&&token)led().className='drive-led green';else if(on)led().classList.add('pulse')}
+  function setSaving(on) {
+    $('driveSaving').classList.toggle('on', on);
+    if (!on && token) led().className = 'drive-led green';
+    else if (on) led().classList.add('pulse');
+  }
 
-  async function gFetch(url,opts={}){
-    const r=await fetch(url,{...opts,headers:{Authorization:'Bearer '+token,...(opts.headers||{})}});
-    if(r.status===401){token=null;setStatus('off');throw new Error('Session expirée')}
+  // ── appel API authentifié ──
+  async function api(url, opts = {}) {
+    if (!token) throw new Error('Non connecté à Drive');
+    const r = await fetch(url, {
+      ...opts,
+      headers: { Authorization: 'Bearer ' + token, ...(opts.headers || {}) }
+    });
+    if (r.status === 401) { token = null; setStatus('off'); throw new Error('Session expirée — reconnectez-vous'); }
+    if (!r.ok) { const t = await r.text().catch(() => ''); throw new Error('HTTP ' + r.status + (t ? ' : ' + t.slice(0, 120) : '')); }
     return r;
   }
 
-  async function populateFolders(){
-    const sel=document.getElementById('driveFolderSelect');
-    sel.innerHTML='<option value="">— Racine Drive —</option>';
-    try{
-      const q=encodeURIComponent("mimeType='application/vnd.google-apps.folder' and trashed=false");
-      const r=await gFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=50`);
-      const d=await r.json();
-      (d.files||[]).sort((a,b)=>a.name.localeCompare(b.name)).forEach(f=>{
-        const o=document.createElement('option');o.value=f.id;o.textContent=f.name;
-        if(f.id===config.driveFolderId)o.selected=true;
+  // ── liste des dossiers ──
+  async function populateFolders() {
+    const sel = $('driveFolderSelect'); if (!sel) return;
+    sel.innerHTML = '<option value="">— Racine Drive —</option>';
+    try {
+      const q = encodeURIComponent("mimeType='application/vnd.google-apps.folder' and trashed=false");
+      const r = await api(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=100`);
+      const d = await r.json();
+      (d.files || []).sort((a, b) => a.name.localeCompare(b.name)).forEach(f => {
+        const o = document.createElement('option');
+        o.value = f.id; o.textContent = f.name;
+        if (f.id === config.driveFolderId) o.selected = true;
         sel.appendChild(o);
       });
-      if(!config.driveFolderId)sel.value='';
-      document.getElementById('driveFolderStatus').textContent=(d.files||[]).length+' dossier(s)';
-    }catch(e){document.getElementById('driveFolderStatus').textContent='Erreur chargement'}
+      if (!config.driveFolderId) sel.value = '';
+      const st = $('driveFolderStatus');
+      if (st) st.textContent = (d.files || []).length + ' dossier(s) trouvé(s)';
+    } catch (e) {
+      const st = $('driveFolderStatus');
+      if (st) st.textContent = 'Erreur : ' + e.message;
+    }
   }
 
-  async function countBackups(){
-    try{
-      let q=`name='portail_backup.json' and trashed=false`;
-      if(folderId)q+=` and '${folderId}' in parents`;
-      const r=await gFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`);
-      const d=await r.json();backupCount=(d.files||[]).length;
-      document.getElementById('driveCount').textContent=backupCount+' sauvegarde'+(backupCount!==1?'s':'');
-    }catch(e){}
+  // ── comptage sauvegardes ──
+  async function countBackups() {
+    try {
+      let q = "name='portail_backup.json' and trashed=false";
+      if (folderId) q += ` and '${folderId}' in parents`;
+      const r = await api(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`);
+      const d = await r.json();
+      backupCount = (d.files || []).length;
+      const cnt = $('driveCount');
+      if (cnt) cnt.textContent = backupCount + ' sauvegarde' + (backupCount !== 1 ? 's' : '');
+    } catch (_) {}
   }
 
-  async function save(){
+  // ── sauvegarde ──
+  async function save() {
     setSaving(true);
-    try{
-      const data=JSON.stringify({config,notes,savedAt:new Date().toISOString()},null,2);
-      let q=`name='portail_backup.json' and trashed=false`;
-      if(folderId)q+=` and '${folderId}' in parents`;
-      const sr=await gFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`);
-      const sd=await sr.json();const ex=(sd.files||[])[0];
-      if(ex){
-        await gFetch(`https://www.googleapis.com/upload/drive/v3/files/${ex.id}?uploadType=media`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:data});
-      }else{
-        const meta={name:'portail_backup.json',mimeType:'application/json'};
-        if(folderId)meta.parents=[folderId];
-        const form=new FormData();
-        form.append('metadata',new Blob([JSON.stringify(meta)],{type:'application/json'}));
-        form.append('file',new Blob([data],{type:'application/json'}));
-        await gFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{method:'POST',body:form});
+    try {
+      const data = JSON.stringify({ config, notes, savedAt: new Date().toISOString() }, null, 2);
+      let q = "name='portail_backup.json' and trashed=false";
+      if (folderId) q += ` and '${folderId}' in parents`;
+      const sr = await api(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`);
+      const sd = await sr.json();
+      const ex = (sd.files || [])[0];
+      if (ex) {
+        await api(
+          `https://www.googleapis.com/upload/drive/v3/files/${ex.id}?uploadType=media`,
+          { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: data }
+        );
+      } else {
+        const meta = { name: 'portail_backup.json', mimeType: 'application/json' };
+        if (folderId) meta.parents = [folderId];
+        const form = new FormData();
+        form.append('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
+        form.append('file',     new Blob([data],               { type: 'application/json' }));
+        await api('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', { method: 'POST', body: form });
         backupCount++;
       }
-      document.getElementById('driveCount').textContent=backupCount+' sauvegarde'+(backupCount!==1?'s':'');
+      const cnt = $('driveCount');
+      if (cnt) cnt.textContent = backupCount + ' sauvegarde' + (backupCount !== 1 ? 's' : '');
       toast('✅ Sauvegardé sur Google Drive');
-    }catch(e){toast('Erreur Drive : '+e.message,'err')}
-    finally{setSaving(false)}
+    } catch (e) { toast('Erreur Drive : ' + e.message, 'err'); }
+    finally { setSaving(false); }
   }
 
-  async function restore(){
-    // Ouvrir le modal et charger la liste des versions
-    const modal=document.getElementById('restoreModal');
-    const list=document.getElementById('restoreList');
+  // ── modal restauration ──
+  async function openRestoreModal() {
+    const modal = $('restoreModal'), list = $('restoreList');
     modal.classList.add('open');
-    list.innerHTML='<div class="restore-loading"><div class="restore-spinner"></div><br>Chargement des sauvegardes…</div>';
-
-    try{
-      // Chercher TOUTES les versions du fichier de sauvegarde
-      let q=`name='portail_backup.json' and trashed=false`;
-      if(folderId)q+=` and '${folderId}' in parents`;
-      const sr=await gFetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime,size,version)&orderBy=modifiedTime desc`);
-      const sd=await sr.json();
-      const files=sd.files||[];
-
-      // Pour chaque fichier, récupérer ses révisions
-      let versions=[];
-      for(const file of files){
-        try{
-          const rv=await gFetch(`https://www.googleapis.com/drive/v3/files/${file.id}/revisions?fields=revisions(id,modifiedTime,size)`);
-          const rd=await rv.json();
-          const revs=rd.revisions||[];
-          if(revs.length>0){
-            revs.reverse().forEach((rev,i)=>{
-              versions.push({fileId:file.id,revId:rev.id,modifiedTime:rev.modifiedTime,size:rev.size,isLatest:i===0,versionNum:revs.length-i});
-            });
+    list.innerHTML = '<div class="restore-loading"><div class="restore-spinner"></div><br>Chargement des sauvegardes…</div>';
+    try {
+      let q = "name='portail_backup.json' and trashed=false";
+      if (folderId) q += ` and '${folderId}' in parents`;
+      const sr = await api(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime,size)&orderBy=modifiedTime desc`);
+      const sd = await sr.json();
+      const files = sd.files || [];
+      let versions = [];
+      for (const file of files) {
+        try {
+          const rv = await api(`https://www.googleapis.com/drive/v3/files/${file.id}/revisions?fields=revisions(id,modifiedTime,size)`);
+          const rd = await rv.json();
+          const revs = (rd.revisions || []).reverse();
+          if (revs.length) {
+            revs.forEach((rev, i) => versions.push({ fileId: file.id, revId: rev.id, modifiedTime: rev.modifiedTime, size: rev.size, latest: i === 0 }));
           } else {
-            // fallback si révisions non disponibles
-            versions.push({fileId:file.id,revId:null,modifiedTime:file.modifiedTime,size:file.size,isLatest:true,versionNum:1});
+            versions.push({ fileId: file.id, revId: null, modifiedTime: file.modifiedTime, size: file.size, latest: true });
           }
-        }catch{
-          versions.push({fileId:file.id,revId:null,modifiedTime:file.modifiedTime,size:file.size,isLatest:true,versionNum:1});
+        } catch (_) {
+          versions.push({ fileId: file.id, revId: null, modifiedTime: file.modifiedTime, size: file.size, latest: true });
         }
       }
-
-      if(!versions.length){
-        list.innerHTML='<div class="restore-loading">Aucune sauvegarde trouvée</div>';
-        return;
-      }
-
-      // Trier par date décroissante
-      versions.sort((a,b)=>new Date(b.modifiedTime)-new Date(a.modifiedTime));
-
-      list.innerHTML='';
-      versions.forEach((v,idx)=>{
-        const d=new Date(v.modifiedTime);
-        const dateStr=d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-        const timeStr=d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
-        const sizeKb=v.size?Math.round(parseInt(v.size)/1024)+'kb':'';
-        const item=document.createElement('div');item.className='restore-item';
-        item.innerHTML=`
-          <div style="flex-shrink:0;width:32px;height:32px;border-radius:8px;background:${idx===0?'var(--gold-dim)':'var(--surface2)'};display:flex;align-items:center;justify-content:center;font-size:14px">${idx===0?'⭐':'🕐'}</div>
+      versions.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
+      if (!versions.length) { list.innerHTML = '<div class="restore-loading">Aucune sauvegarde trouvée.</div>'; return; }
+      list.innerHTML = '';
+      versions.forEach((v, idx) => {
+        const d   = new Date(v.modifiedTime);
+        const ds  = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        const ts  = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        const sz  = v.size ? Math.round(parseInt(v.size) / 1024) + ' ko' : '';
+        const item = document.createElement('div'); item.className = 'restore-item';
+        item.innerHTML = `
+          <div style="width:32px;height:32px;border-radius:8px;background:${idx===0?'var(--gold-dim)':'var(--surface2)'};display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">${idx===0?'⭐':'🕐'}</div>
           <div style="flex:1;min-width:0">
-            <div class="restore-item-date">${dateStr}</div>
-            <div class="restore-item-sub">${timeStr}${v.isLatest&&idx===0?' · Version la plus récente':''}${sizeKb?' · '+sizeKb:''}</div>
+            <div class="restore-item-date">${ds}</div>
+            <div class="restore-item-sub">${ts}${idx===0?' · Plus récente':''}${sz?' · '+sz:''}</div>
           </div>
           <div class="restore-arrow">→</div>`;
-        item.addEventListener('click',async()=>{
-          if(!confirm('Restaurer cette version du '+dateStr+' à '+timeStr+' ?\n\nLes données actuelles seront remplacées.'))return;
+        item.addEventListener('click', async () => {
+          if (!confirm('Restaurer la version du ' + ds + ' à ' + ts + ' ?\n\nLes données locales seront remplacées.')) return;
           modal.classList.remove('open');
           setSaving(true);
-          try{
-            let fr;
-            if(v.revId){
-              fr=await gFetch(`https://www.googleapis.com/drive/v3/files/${v.fileId}/revisions/${v.revId}?alt=media`);
-            } else {
-              fr=await gFetch(`https://www.googleapis.com/drive/v3/files/${v.fileId}?alt=media`);
-            }
-            const dt=await fr.json();
-            if(dt.config){Object.assign(config,dt.config);saveConfig(config)}
-            if(dt.notes){notes=dt.notes;saveNotes(notes)}
-            renderUserList();renderNotes();
-            document.getElementById('gClientId').value=config.gClientId||'';
-            document.getElementById('gApiKey').value=config.gApiKey||'';
-            toast('✅ Restauré depuis le '+dateStr+' à '+timeStr,'info');
-          }catch(e){toast('Erreur restauration : '+e.message,'err')}
-          finally{setSaving(false)}
+          try {
+            const url = v.revId
+              ? `https://www.googleapis.com/drive/v3/files/${v.fileId}/revisions/${v.revId}?alt=media`
+              : `https://www.googleapis.com/drive/v3/files/${v.fileId}?alt=media`;
+            const fr = await api(url);
+            const dt = await fr.json();
+            if (dt.config) { Object.assign(config, dt.config); saveConfig(config); }
+            if (dt.notes)  { notes = dt.notes; saveNotes(notes); }
+            renderUserList(); renderNotes();
+            $('gClientId').value = config.gClientId || '';
+            $('gApiKey').value   = config.gApiKey   || '';
+            toast('✅ Restauré — ' + ds + ' à ' + ts, 'info');
+          } catch (e) { toast('Erreur restauration : ' + e.message, 'err'); }
+          finally { setSaving(false); }
         });
         list.appendChild(item);
       });
-    }catch(e){
-      list.innerHTML='<div class="restore-loading">Erreur : '+esc(e.message)+'</div>';
+    } catch (e) {
+      list.innerHTML = '<div class="restore-loading">Erreur : ' + e.message + '</div>';
     }
   }
 
-  async function createFolder(){
-    const name=prompt('Nom du nouveau dossier :');if(!name)return;
-    try{
-      const meta={name,mimeType:'application/vnd.google-apps.folder'};
-      if(folderId)meta.parents=[folderId];
-      const r=await gFetch('https://www.googleapis.com/drive/v3/files',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(meta)});
-      const d=await r.json();
-      config.driveFolderId=d.id;config.driveFolderName=d.name;folderId=d.id;saveConfig(config);
+  // ── créer un dossier ──
+  async function createFolder() {
+    const name = prompt('Nom du nouveau dossier :'); if (!name) return;
+    try {
+      const meta = { name, mimeType: 'application/vnd.google-apps.folder' };
+      if (folderId) meta.parents = [folderId];
+      const r = await api('https://www.googleapis.com/drive/v3/files', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(meta)
+      });
+      const d = await r.json();
+      config.driveFolderId = d.id; config.driveFolderName = d.name;
+      folderId = d.id; saveConfig(config);
       await populateFolders();
-      toast('Dossier "'+d.name+'" créé','info');
-    }catch(e){toast('Erreur : '+e.message,'err')}
+      toast('Dossier "' + d.name + '" créé', 'info');
+    } catch (e) { toast('Erreur : ' + e.message, 'err'); }
   }
 
-  function connect(){
-    if(!config.gClientId){
-      toast('Configurez le Client ID OAuth dans l\'onglet Sécurité','err');return;
-    }
-    setStatus('busy');
+  // ── déconnexion ──
+  function disconnect() { token = null; userEmail = ''; setStatus('off'); toast('Drive déconnecté'); }
 
-    // Flux OAuth2 natif — aucune bibliothèque Google requise
-    const redirectUri=location.href.split('?')[0].split('#')[0];
-    const params=new URLSearchParams({
-      client_id:config.gClientId,
-      redirect_uri:redirectUri,
-      response_type:'token',
-      scope:'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
-      prompt:'select_account',
-      include_granted_scopes:'true'
-    });
-
-    const authUrl='https://accounts.google.com/o/oauth2/v2/auth?'+params.toString();
-    const popup=window.open(authUrl,'google_oauth','width=520,height=620,left='+(screen.width/2-260)+',top='+(screen.height/2-310));
-
-    if(!popup||popup.closed){
-      setStatus('off');
-      toast('Popup bloquée — autorisez les popups pour ce site','err');
+  // ══════════════════════════════════════════
+  // CONNEXION — flux OAuth2 Implicit (popup)
+  // ══════════════════════════════════════════
+  function connect() {
+    const clientId = (config.gClientId || '').trim();
+    if (!clientId) {
+      toast('⚠️ Allez dans Sécurité → saisissez votre Client ID Google avant de connecter', 'err');
       return;
     }
+    // Déterminer l'URI de redirection exacte (la page courante sans query/hash)
+    const redirectUri = location.origin + location.pathname;
 
-    // Surveiller le retour du popup
-    const poll=setInterval(async()=>{
-      try{
-        if(popup.closed&&!token){
-          clearInterval(poll);setStatus('off');
-          toast('Connexion annulée','info');return;
+    const params = new URLSearchParams({
+      client_id:     clientId,
+      redirect_uri:  redirectUri,
+      response_type: 'token',
+      scope:         'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
+      prompt:        'select_account',
+      include_granted_scopes: 'true'
+    });
+
+    const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
+
+    // Ouvrir popup centré
+    const pw = 520, ph = 640;
+    const pl = Math.max(0, (screen.width  - pw) / 2);
+    const pt = Math.max(0, (screen.height - ph) / 2);
+    const popup = window.open(authUrl, '_blank',
+      `width=${pw},height=${ph},left=${pl},top=${pt},toolbar=0,menubar=0,location=1,status=0`);
+
+    if (!popup || popup.closed) {
+      toast('❌ Popup bloquée — autorisez les popups pour ce site dans votre navigateur', 'err');
+      setStatus('off'); return;
+    }
+
+    setStatus('busy');
+    let done = false;
+
+    const poll = setInterval(async () => {
+      try {
+        if (popup.closed && !done) {
+          clearInterval(poll); setStatus('off');
+          toast('Connexion annulée', 'info'); return;
         }
-        // Lire le hash quand le popup revient sur notre page
-        let hash='';
-        try{hash=popup.location.hash}catch(e){return}// encore sur google.com
+        // Tenter de lire l'URL — bloqué tant qu'on est sur google.com (cross-origin)
+        let href = '';
+        try { href = popup.location.href; } catch (_) { return; }
 
-        if(hash&&hash.includes('access_token')){
-          clearInterval(poll);
-          popup.close();
-          const hp=new URLSearchParams(hash.replace('#',''));
-          token=hp.get('access_token');
-          if(!token){setStatus('off');toast('Token introuvable','err');return}
-          try{
-            const er=await fetch('https://www.googleapis.com/oauth2/v2/userinfo',{headers:{Authorization:'Bearer '+token}});
-            if(!er.ok)throw new Error('HTTP '+er.status);
-            const ed=await er.json();userEmail=ed.email||'';
-            folderId=config.driveFolderId||'';
+        // On est revenu sur notre page → lire le token dans le hash
+        if (href && href.startsWith(redirectUri)) {
+          clearInterval(poll); done = true;
+          try { popup.close(); } catch (_) {}
+
+          const hash = new URLSearchParams(popup.location.hash.replace(/^#/, ''));
+          const accessToken = hash.get('access_token');
+          const error       = hash.get('error');
+
+          if (error) {
+            setStatus('off');
+            toast('Erreur Google : ' + error, 'err'); return;
+          }
+          if (!accessToken) {
+            setStatus('off');
+            toast('Token introuvable dans la réponse Google', 'err'); return;
+          }
+
+          token = accessToken;
+          try {
+            const er = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+              headers: { Authorization: 'Bearer ' + token }
+            });
+            if (!er.ok) throw new Error('HTTP ' + er.status);
+            const ed   = await er.json();
+            userEmail  = ed.email || '';
+            folderId   = config.driveFolderId || '';
             await countBackups();
             setStatus('on');
             await populateFolders();
-            toast('✅ Google Drive connecté — '+userEmail,'info');
-          }catch(e){token=null;setStatus('off');toast('Erreur après connexion : '+e.message,'err')}
+            toast('✅ Google Drive connecté — ' + userEmail, 'info');
+          } catch (e) {
+            token = null; setStatus('off');
+            toast('Erreur après connexion : ' + e.message, 'err');
+          }
         }
+      } catch (_) { /* cross-origin, on attend */ }
+    }, 300);
 
-        if(hash&&hash.includes('error=')){
-          clearInterval(poll);popup.close();setStatus('off');
-          const hp=new URLSearchParams(hash.replace('#',''));
-          toast('Erreur Google : '+hp.get('error'),'err');
-        }
-      }catch(e){/* popup encore sur Google, on continue */}
-    },400);
-
-    // Timeout 3 minutes
-    setTimeout(()=>{
-      if(!token){clearInterval(poll);try{popup.close()}catch(e){}setStatus('off');}
-    },180000);
+    // Timeout 3 min
+    setTimeout(() => {
+      if (!done) {
+        clearInterval(poll); done = true;
+        try { popup.close(); } catch (_) {}
+        if (!token) { setStatus('off'); toast('Délai dépassé — réessayez', 'err'); }
+      }
+    }, 180000);
   }
 
-  function disconnect(){token=null;userEmail='';setStatus('off');toast('Drive déconnecté')}
-
-  function init(){
+  // ── initialisation ──
+  function init() {
     setStatus('off');
-    document.getElementById('driveConnectBtn').addEventListener('click',connect);
-    document.getElementById('driveDisconnectBtn').addEventListener('click',disconnect);
-    document.getElementById('driveSaveBtn').addEventListener('click',save);
-    document.getElementById('driveLoadBtn').addEventListener('click',restore);
-    document.getElementById('driveNewFolder').addEventListener('click',createFolder);
-    document.getElementById('driveRefreshFolders').addEventListener('click',populateFolders);
-    document.getElementById('driveFolderSelect').addEventListener('change',e=>{
-      config.driveFolderId=e.target.value;folderId=e.target.value;
-      const opt=e.target.options[e.target.selectedIndex];
-      config.driveFolderName=opt?opt.textContent.trim():'';saveConfig(config);
-      toast('Dossier : '+(config.driveFolderName||'Racine'),'info');
+    $('driveConnectBtn') .addEventListener('click', connect);
+    $('driveDisconnectBtn').addEventListener('click', disconnect);
+    $('driveSaveBtn')    .addEventListener('click', save);
+    $('driveLoadBtn')    .addEventListener('click', openRestoreModal);
+    $('driveNewFolder')  .addEventListener('click', createFolder);
+    $('driveRefreshFolders').addEventListener('click', populateFolders);
+    $('driveFolderSelect').addEventListener('change', e => {
+      config.driveFolderId  = e.target.value;
+      folderId              = e.target.value;
+      const opt = e.target.options[e.target.selectedIndex];
+      config.driveFolderName = opt ? opt.textContent.trim() : '';
+      saveConfig(config);
+      toast('Dossier : ' + (config.driveFolderName || 'Racine'), 'info');
     });
-    window.addEventListener('online',()=>{if(!token)setStatus('off')});
-    window.addEventListener('offline',()=>{if(!token){led().className='drive-led red';statusEl().textContent='Hors ligne'}});
+    window.addEventListener('online',  () => { if (!token) setStatus('off'); });
+    window.addEventListener('offline', () => {
+      if (!token) { led().className = 'drive-led red'; stEl().textContent = 'Hors ligne'; }
+    });
   }
-  return{init};
+
+  return { init };
 })();
-
-// ══ FEEDBACK ══
-const FBK='portail_feedback_v1';
-function loadFeedbacks(){try{return JSON.parse(localStorage.getItem(FBK))||[]}catch{return[]}}
-function saveFeedbacks(f){localStorage.setItem(FBK,JSON.stringify(f))}
-let feedbacks=loadFeedbacks();
-let fbFilter='tous';
-let fbSelectedType='suggestion';
-
-function fbUserColor(name){
-  const colors=['#c9a84c','#5ab87e','#5b9bd5','#d96c6c','#a07ed1','#d97b3a','#3abcd9'];
-  let h=0;for(let i=0;i<name.length;i++)h=(h*31+name.charCodeAt(i))&0xffff;
-  return colors[h%colors.length];
-}
-function fbInitials(name){return name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2)}
-
-function populateFbUserSelect(){
-  const sel=document.getElementById('fbUserSelect');
-  sel.innerHTML='<option value="__admin__">👤 Administrateur</option>';
-  config.users.forEach(u=>{
-    const o=document.createElement('option');o.value=u.id;o.textContent='👤 '+u.name;
-    sel.appendChild(o);
-  });
-}
-
-function updateFbBadge(){
-  const newCount=feedbacks.filter(f=>f.status==='nouveau').length;
-  const badge=document.getElementById('fbNewBadge');
-  if(!badge)return;
-  if(newCount>0){badge.textContent=newCount;badge.style.display=''}
-  else badge.style.display='none';
-}
-
-function renderFeedbacks(){
-  const list=document.getElementById('fbList'),empty=document.getElementById('fbEmpty'),cnt=document.getElementById('fbCount');
-  let fb=[...feedbacks].sort((a,b)=>b.created-a.created);
-  if(fbFilter!=='tous')fb=fb.filter(f=>f.status===fbFilter);
-  cnt.textContent=fb.length+' retour'+(fb.length!==1?'s':'');
-  if(!fb.length){list.innerHTML='';empty.style.display='block';return}
-  empty.style.display='none';list.innerHTML='';
-
-  fb.forEach(f=>{
-    const color=fbUserColor(f.userName);
-    const bg=hRgba(color,.14);
-    const card=document.createElement('div');card.className='fb-card';card.dataset.id=f.id;
-    card.innerHTML=`
-      <div class="fb-card-head">
-        <div class="fb-avatar" style="background:${bg};color:${color}">${fbInitials(f.userName)}</div>
-        <div class="fb-meta">
-          <div class="fb-author">${esc(f.userName)}</div>
-          <div class="fb-date">${fmtDate(f.created)}</div>
-        </div>
-        <span class="fb-type ${f.type}">${typeLabel(f.type)}</span>
-        <span class="fb-status ${f.status}" title="Cliquer pour changer le statut" data-id="${f.id}">${statusLabel(f.status)}</span>
-      </div>
-      <div class="fb-message">${esc(f.message)}</div>
-      ${f.reply?`<div class="fb-reply"><div class="fb-reply-label">Réponse admin</div>${esc(f.reply)}</div>`:''}
-      <div class="fb-actions">
-        <button class="btn-ghost reply-toggle-btn" data-id="${f.id}" style="font-size:11px;padding:6px 11px">✏️ ${f.reply?'Modifier la réponse':'Répondre'}</button>
-        <button class="btn-danger fb-del-btn" data-id="${f.id}" style="font-size:11px;padding:6px 10px">🗑️</button>
-      </div>
-      <div class="fb-reply-area" id="fbra_${f.id}">
-        <textarea placeholder="Votre réponse à cet utilisateur…">${esc(f.reply||'')}</textarea>
-        <div class="fb-reply-area-actions">
-          <button class="btn-ghost fbra-cancel" data-id="${f.id}" style="font-size:11px;padding:6px 11px">Annuler</button>
-          <button class="btn-gold fbra-save" data-id="${f.id}" style="font-size:11px;padding:6px 14px">Enregistrer</button>
-        </div>
-      </div>`;
-    list.appendChild(card);
-  });
-
-  // Events
-  list.querySelectorAll('.fb-status').forEach(el=>{
-    el.addEventListener('click',()=>{
-      const id=el.dataset.id,f=feedbacks.find(x=>x.id===id);if(!f)return;
-      const cycle={nouveau:'lu',lu:'traité',traité:'nouveau'};
-      f.status=cycle[f.status]||'nouveau';
-      saveFeedbacks(feedbacks);renderFeedbacks();updateFbBadge();
-    });
-  });
-  list.querySelectorAll('.reply-toggle-btn').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      const area=document.getElementById('fbra_'+btn.dataset.id);
-      area.classList.toggle('open');
-      if(area.classList.contains('open'))area.querySelector('textarea').focus();
-    });
-  });
-  list.querySelectorAll('.fbra-cancel').forEach(btn=>{
-    btn.addEventListener('click',()=>document.getElementById('fbra_'+btn.dataset.id).classList.remove('open'));
-  });
-  list.querySelectorAll('.fbra-save').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      const id=btn.dataset.id,f=feedbacks.find(x=>x.id===id);if(!f)return;
-      f.reply=document.getElementById('fbra_'+id).querySelector('textarea').value.trim();
-      if(f.status==='nouveau')f.status='lu';
-      saveFeedbacks(feedbacks);renderFeedbacks();updateFbBadge();
-      toast('Réponse enregistrée','info');
-    });
-  });
-  list.querySelectorAll('.fb-del-btn').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      if(!confirm('Supprimer ce retour ?'))return;
-      feedbacks=feedbacks.filter(x=>x.id!==btn.dataset.id);
-      saveFeedbacks(feedbacks);renderFeedbacks();updateFbBadge();
-      toast('Retour supprimé');
-    });
-  });
-}
-
-function typeLabel(t){const m={suggestion:'💡 Suggestion',bug:'🐛 Problème',amélioration:'⚡ Amélioration',autre:'💬 Autre'};return m[t]||t}
-function statusLabel(s){const m={nouveau:'🔴 Nouveau',lu:'👁️ Lu',traité:'✅ Traité'};return m[s]||s}
-
-// Type selector
-document.getElementById('fbTypeRow').addEventListener('click',e=>{
-  const btn=e.target.closest('.fb-type-btn');if(!btn)return;
-  document.querySelectorAll('.fb-type-btn').forEach(b=>b.classList.remove('sel'));
-  btn.classList.add('sel');fbSelectedType=btn.dataset.type;
-});
-
-// Filter
-document.querySelectorAll('.fb-btn').forEach(btn=>{
-  btn.addEventListener('click',()=>{
-    document.querySelectorAll('.fb-btn').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active');fbFilter=btn.dataset.fbf;renderFeedbacks();
-  });
-});
-
-// Submit feedback
-document.getElementById('fbSubmitBtn').addEventListener('click',()=>{
-  const msg=document.getElementById('fbMessage').value.trim();
-  if(!msg){toast('Rédigez votre retour avant d\'envoyer','err');return}
-  const selEl=document.getElementById('fbUserSelect');
-  const userId=selEl.value;
-  let userName='Administrateur';
-  if(userId!=='__admin__'){
-    const u=config.users.find(x=>x.id===userId);
-    if(u)userName=u.name;
-  }
-  feedbacks.unshift({
-    id:uid(),
-    userId,userName,
-    type:fbSelectedType,
-    message:msg,
-    status:'nouveau',
-    created:Date.now(),
-    reply:''
-  });
-  saveFeedbacks(feedbacks);
-  document.getElementById('fbMessage').value='';
-  renderFeedbacks();updateFbBadge();
-  toast('✅ Retour envoyé — merci !');
-});
-
-function initFeedbackTab(){
-  feedbacks=loadFeedbacks();
-  populateFbUserSelect();
-  renderFeedbacks();
-  updateFbBadge();
-}
 
 function driveInit(){GDriveModule.init()}
 (function(){
