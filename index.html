@@ -1639,7 +1639,8 @@ recBtn.addEventListener('click',async()=>{
     _gdSaving=true;
     _gdShowSaving(true);
     try{
-      const payload=JSON.stringify({config,notes,feedbacks,savedAt:new Date().toISOString()},null,2);
+      const fbData=(typeof feedbacks!=='undefined')?feedbacks:[];
+      const payload=JSON.stringify({config,notes,feedbacks:fbData,savedAt:new Date().toISOString()},null,2);
       const existingId=await _gdEnsureFile();
       let fileId;
       if(existingId){
