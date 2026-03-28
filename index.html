@@ -1145,7 +1145,13 @@ function doLogin(){
 }
 document.getElementById('loginBtn').addEventListener('click',doLogin);
 document.getElementById('pwdInput').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
-document.getElementById('logoutBtn').addEventListener('click',()=>{showScreen('login');renderFavRow();document.getElementById('pwdInput').focus()});
+document.getElementById('logoutBtn').addEventListener('click',()=>{
+  showScreen('login');
+  renderFavRow();
+  // Restaurer le mot de passe mémorisé si disponible
+  if(window._loadSavedPwd) window._loadSavedPwd();
+  else document.getElementById('pwdInput').focus();
+});
 
 // ── Se souvenir du mot de passe ──
 (function(){
@@ -1153,13 +1159,15 @@ document.getElementById('logoutBtn').addEventListener('click',()=>{showScreen('l
   const pwdEl=document.getElementById('pwdInput');
   const cbEl=document.getElementById('rememberPwd');
   const clearBtn=document.getElementById('clearSavedPwd');
+  const eyeBtn=document.getElementById('eyeBtn');
 
   function loadSaved(){
     const saved=localStorage.getItem(RPK);
     if(saved){
       try{
-        const dec=atob(saved); // encodage minimal (non sécurisé, juste obfusqué)
-        pwdEl.value=dec;
+        pwdEl.value=atob(saved);
+        // Garder masqué par défaut
+        pwdEl.type='password';
         cbEl.checked=true;
         clearBtn.style.display='';
       }catch(e){localStorage.removeItem(RPK);}
@@ -1168,26 +1176,40 @@ document.getElementById('logoutBtn').addEventListener('click',()=>{showScreen('l
 
   cbEl.addEventListener('change',()=>{
     if(cbEl.checked){
-      // Sauvegarder le mot de passe courant s'il est rempli
       const val=pwdEl.value.trim();
-      if(val){localStorage.setItem(RPK,btoa(val));clearBtn.style.display='';}
+      if(val){
+        localStorage.setItem(RPK,btoa(val));
+        clearBtn.style.display='';
+        // Garder masqué
+        pwdEl.type='password';
+      } else {
+        toast('Saisissez d\'abord votre mot de passe','info');
+        cbEl.checked=false;
+      }
     } else {
-      localStorage.removeItem(RPK);clearBtn.style.display='none';
+      localStorage.removeItem(RPK);
+      clearBtn.style.display='none';
+      pwdEl.type='password';
     }
   });
 
   clearBtn.addEventListener('click',()=>{
     localStorage.removeItem(RPK);
-    pwdEl.value='';cbEl.checked=false;clearBtn.style.display='none';
+    pwdEl.value='';pwdEl.type='password';
+    cbEl.checked=false;clearBtn.style.display='none';
     toast('Mot de passe oublié','info');
+    pwdEl.focus();
   });
 
-  // Sauvegarder après connexion réussie si case cochée
   window._saveRememberedPwd=function(val){
     if(cbEl.checked){localStorage.setItem(RPK,btoa(val));clearBtn.style.display='';}
   };
 
-  loadSaved();
+  // Rappeler loadSaved au retour sur l'écran de connexion
+  window._loadSavedPwd=loadSaved;
+
+  // Charger au démarrage (différé pour laisser le DOM s'initialiser)
+  setTimeout(loadSaved, 50);
 })();
 
 // ══ TABS ══
@@ -1800,10 +1822,13 @@ function cePreview(code){
   const frame=document.getElementById('cePreviewFrame');
   card.style.display='block';
   card.scrollIntoView({behavior:'smooth',block:'nearest'});
-  ceWriteFrame(frame,code);
-  setTimeout(()=>{
-    try{frame.style.height=(frame.contentWindow.document.body.scrollHeight+40)+'px';}catch(e){}
-  },400);
+  // Écrire après rendu visible
+  requestAnimationFrame(()=>{
+    ceWriteFrame(frame,code);
+    setTimeout(()=>{
+      try{frame.style.height=(frame.contentWindow.document.body.scrollHeight+40)+'px';}catch(e){}
+    },600);
+  });
 }
 
 // Events
@@ -1840,8 +1865,12 @@ document.getElementById('ceFullscreenBtn').addEventListener('click',()=>{
   _ceFsCode=code;
   const title=document.getElementById('ceTitleInput').value||'Lecteur';
   document.getElementById('ceFullscreenTitle').textContent='▶ '+title;
-  ceWriteFrame(document.getElementById('ceFsFrame'),code);
+  // Afficher le conteneur D'ABORD, sinon le navigateur refuse de charger l'iframe cachée
   document.getElementById('ceFullscreen').classList.add('open');
+  // Écrire dans l'iframe APRÈS qu'elle soit visible (requestAnimationFrame garantit le rendu)
+  requestAnimationFrame(()=>{
+    ceWriteFrame(document.getElementById('ceFsFrame'),code);
+  });
 });
 document.getElementById('ceFsClose').addEventListener('click',()=>{
   document.getElementById('ceFullscreen').classList.remove('open');
