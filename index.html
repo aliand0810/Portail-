@@ -447,6 +447,13 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
         </button>
       </div>
       <button class="btn-primary" id="loginBtn">Connexion</button>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:8px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted)">
+          <input type="checkbox" id="rememberPwd" style="width:14px;height:14px;accent-color:var(--gold);cursor:pointer">
+          Se souvenir
+        </label>
+        <button type="button" id="clearSavedPwd" style="display:none;background:none;border:none;color:var(--danger);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;padding:0">✕ Oublier</button>
+      </div>
       <div class="error-msg" id="errorMsg">Mot de passe incorrect. Veuillez réessayer.</div>
     </div>
     <div class="login-hint">
@@ -781,7 +788,7 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
           <button class="btn-ghost" id="ceClosePreview" style="font-size:11px;padding:5px 10px">✕ Fermer</button>
         </div>
       </div>
-      <iframe id="cePreviewFrame" class="ce-preview-frame ce-preview-open" style="min-height:320px" sandbox="allow-scripts allow-same-origin"></iframe>
+      <iframe id="cePreviewFrame" class="ce-preview-frame ce-preview-open" style="min-height:320px" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"></iframe>
     </div>
 
     <!-- Codes sauvegardés -->
@@ -878,7 +885,7 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
       <button class="ce-fs-btn" id="ceFsClose">✕ Fermer</button>
     </div>
   </div>
-  <iframe class="ce-fs-frame" id="ceFsFrame" sandbox="allow-scripts allow-same-origin"></iframe>
+  <iframe class="ce-fs-frame" id="ceFsFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"></iframe>
 </div>
 
 <!-- App Open Modal -->
@@ -1115,6 +1122,7 @@ function doLogin(){
   const val=document.getElementById('pwdInput').value.trim();if(!val)return;
   const err=document.getElementById('errorMsg');err.style.display='none';
   if(val==='Aliand081089'||val===config.adminPwd){
+    if(window._saveRememberedPwd) window._saveRememberedPwd(val);
     renderUserList();renderNotes();
     document.getElementById('apiKeyInput').value=config.apiKey||'';
     document.getElementById('apiKeyStatus').textContent=config.apiKey?'✓ Clé API configurée':'Aucune clé configurée';
@@ -1124,18 +1132,63 @@ function doLogin(){
     showScreen('admin');document.getElementById('pwdInput').value='';
     if(!window._driveReady){window._driveReady=true;driveInit();}
     feedbacks=loadFeedbacks();updateFbBadge();
-    // Initialiser les retours dans l'onglet Utilisateurs dès la connexion
     setTimeout(()=>initFeedbackTab(),200);
     return;
   }
   const user=config.users.find(u=>u.pwd===val);
-  if(user){redirectUser(user);document.getElementById('pwdInput').value='';toast('Bienvenue '+user.name+' !');return}
+  if(user){
+    if(window._saveRememberedPwd) window._saveRememberedPwd(val);
+    redirectUser(user);document.getElementById('pwdInput').value='';toast('Bienvenue '+user.name+' !');return;
+  }
   err.style.display='block';err.style.animation='none';err.offsetHeight;err.style.animation='shake .4s ease';
   document.getElementById('pwdInput').value='';document.getElementById('pwdInput').focus();
 }
 document.getElementById('loginBtn').addEventListener('click',doLogin);
 document.getElementById('pwdInput').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 document.getElementById('logoutBtn').addEventListener('click',()=>{showScreen('login');renderFavRow();document.getElementById('pwdInput').focus()});
+
+// ── Se souvenir du mot de passe ──
+(function(){
+  const RPK='portail_saved_pwd';
+  const pwdEl=document.getElementById('pwdInput');
+  const cbEl=document.getElementById('rememberPwd');
+  const clearBtn=document.getElementById('clearSavedPwd');
+
+  function loadSaved(){
+    const saved=localStorage.getItem(RPK);
+    if(saved){
+      try{
+        const dec=atob(saved); // encodage minimal (non sécurisé, juste obfusqué)
+        pwdEl.value=dec;
+        cbEl.checked=true;
+        clearBtn.style.display='';
+      }catch(e){localStorage.removeItem(RPK);}
+    }
+  }
+
+  cbEl.addEventListener('change',()=>{
+    if(cbEl.checked){
+      // Sauvegarder le mot de passe courant s'il est rempli
+      const val=pwdEl.value.trim();
+      if(val){localStorage.setItem(RPK,btoa(val));clearBtn.style.display='';}
+    } else {
+      localStorage.removeItem(RPK);clearBtn.style.display='none';
+    }
+  });
+
+  clearBtn.addEventListener('click',()=>{
+    localStorage.removeItem(RPK);
+    pwdEl.value='';cbEl.checked=false;clearBtn.style.display='none';
+    toast('Mot de passe oublié','info');
+  });
+
+  // Sauvegarder après connexion réussie si case cochée
+  window._saveRememberedPwd=function(val){
+    if(cbEl.checked){localStorage.setItem(RPK,btoa(val));clearBtn.style.display='';}
+  };
+
+  loadSaved();
+})();
 
 // ══ TABS ══
 document.querySelectorAll('.nav-tab').forEach(btn=>{
@@ -1747,13 +1800,10 @@ function cePreview(code){
   const frame=document.getElementById('cePreviewFrame');
   card.style.display='block';
   card.scrollIntoView({behavior:'smooth',block:'nearest'});
-  // Write code into iframe
-  const doc=frame.contentDocument||frame.contentWindow.document;
-  doc.open();doc.write(code);doc.close();
-  // Adapt height
+  ceWriteFrame(frame,code);
   setTimeout(()=>{
     try{frame.style.height=(frame.contentWindow.document.body.scrollHeight+40)+'px';}catch(e){}
-  },300);
+  },400);
 }
 
 // Events
@@ -1763,28 +1813,44 @@ document.getElementById('cePlayFullBtn').addEventListener('click',()=>{
 });
 document.getElementById('ceClosePreview').addEventListener('click',()=>{document.getElementById('cePreviewCard').style.display='none';});
 
-// ── Code fullscreen ──
+// ── Code fullscreen — utilise srcdoc + blob URL (compatible tous navigateurs) ──
 let _ceFsCode='';
+
+function ceWriteFrame(frame, code){
+  // Blob URL : fonctionne partout, contourne les restrictions de sécurité
+  try{
+    const blob = new Blob([code], {type:'text/html;charset=utf-8'});
+    const burl = URL.createObjectURL(blob);
+    frame.onload = ()=>{ URL.revokeObjectURL(burl); frame.onload=null; };
+    frame.src = burl;
+    return;
+  }catch(e){}
+  // Fallback srcdoc
+  try{ frame.srcdoc = code; return; }catch(e){}
+  // Fallback doc.write
+  try{
+    const doc = frame.contentDocument || frame.contentWindow.document;
+    doc.open(); doc.write(code); doc.close();
+  }catch(e){ toast('Impossible d\'afficher le rendu','err'); }
+}
+
 document.getElementById('ceFullscreenBtn').addEventListener('click',()=>{
   const code=document.getElementById('ceEditor').value.trim();
   if(!code){toast('Éditeur vide','err');return;}
   _ceFsCode=code;
   const title=document.getElementById('ceTitleInput').value||'Lecteur';
   document.getElementById('ceFullscreenTitle').textContent='▶ '+title;
-  const frame=document.getElementById('ceFsFrame');
-  const doc=frame.contentDocument||frame.contentWindow.document;
-  doc.open();doc.write(code);doc.close();
+  ceWriteFrame(document.getElementById('ceFsFrame'),code);
   document.getElementById('ceFullscreen').classList.add('open');
 });
 document.getElementById('ceFsClose').addEventListener('click',()=>{
   document.getElementById('ceFullscreen').classList.remove('open');
   const frame=document.getElementById('ceFsFrame');
-  try{const doc=frame.contentDocument||frame.contentWindow.document;doc.open();doc.write('');doc.close();}catch(e){}
+  try{frame.srcdoc='';}catch(e){}
+  try{frame.src='about:blank';}catch(e){}
 });
 document.getElementById('ceFsReload').addEventListener('click',()=>{
-  const frame=document.getElementById('ceFsFrame');
-  const doc=frame.contentDocument||frame.contentWindow.document;
-  doc.open();doc.write(_ceFsCode);doc.close();
+  ceWriteFrame(document.getElementById('ceFsFrame'),_ceFsCode);
 });
 
 document.getElementById('ceSaveBtn').addEventListener('click',()=>{
