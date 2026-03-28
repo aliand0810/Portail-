@@ -95,8 +95,10 @@ body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(r
 .card-title{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);margin-bottom:1.25rem;display:flex;align-items:center;gap:8px}
 .card-title::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(201,168,76,.2),transparent)}
 .s-label{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px}
-.s-input{width:100%;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;padding:10px 14px;outline:none;transition:border-color .2s}
-.s-input:focus{border-color:var(--focus)}
+.s-input,select.s-input{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;padding:10px 14px;outline:none;transition:border-color .2s}
+select.s-input{background-color:#0f0f1c;cursor:pointer}
+select.s-input option{background:#0f0f1c;color:var(--text)}
+.s-input:focus,select.s-input:focus{border-color:var(--focus)}
 .s-input::placeholder{color:var(--dim)}
 textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
 .inline-row{display:flex;gap:10px;align-items:flex-end}
@@ -297,7 +299,26 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
 /* Sauvegarde auto indicateur */
 .autosave-indicator{font-size:10px;color:var(--ok);display:none;align-items:center;gap:4px;animation:fadeIn .3s ease}
 .autosave-indicator.show{display:flex}
-/* ── Fullscreen preview ── */
+/* ── Feedback images ── */
+.fb-img-bar{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.fb-img-preview{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.fb-img-thumb-wrap{position:relative;flex-shrink:0}
+.fb-img-thumb{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:zoom-in;transition:opacity .2s}
+.fb-img-thumb:hover{opacity:.8}
+.fb-img-del{position:absolute;top:-5px;right:-5px;width:17px;height:17px;border-radius:50%;background:var(--danger);border:none;color:white;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.fb-card-images{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.fb-card-img{width:54px;height:54px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:zoom-in;transition:opacity .2s}
+.fb-card-img:hover{opacity:.8}
+/* ── Web viewer fullscreen ── */
+.web-viewer{position:fixed;inset:0;z-index:600;background:#000;display:none;flex-direction:column}
+.web-viewer.open{display:flex;animation:fadeIn .18s ease}
+.wv-bar{display:flex;align-items:center;gap:8px;padding:.55rem 1rem;background:rgba(7,7,13,.97);border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0}
+.wv-url{flex:1;font-size:11px;color:rgba(255,255,255,.4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:monospace}
+.wv-btn{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:7px;color:rgba(255,255,255,.75);font-size:12px;padding:4px 11px;cursor:pointer;transition:background .15s;font-family:'DM Sans',sans-serif;white-space:nowrap}
+.wv-btn:hover{background:rgba(255,255,255,.15)}
+.wv-btn.danger{border-color:rgba(224,82,82,.3);color:var(--danger)}
+.wv-btn.danger:hover{background:rgba(224,82,82,.15)}
+.wv-frame{flex:1;border:none;width:100%;background:white}
 .ce-preview-fullscreen{position:fixed;inset:0;z-index:500;background:#111;display:none;flex-direction:column}
 .ce-preview-fullscreen.open{display:flex;animation:fadeIn .2s ease}
 .ce-fs-bar{display:flex;align-items:center;justify-content:space-between;padding:.6rem 1rem;background:rgba(7,7,13,.95);border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0;gap:10px}
@@ -659,7 +680,7 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
       <div class="card-title">💬 Retours des utilisateurs <span id="fbNewBadge2" class="fb-count-badge" style="display:none">0</span></div>
       <div class="fb-submit-card" style="background:none;border:none;padding:0;margin-bottom:1rem">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-          <select class="s-input" id="fbUserSelect" style="flex:1;min-width:140px">
+          <select class="s-input" id="fbUserSelect" style="flex:1;min-width:140px;background:#1a1a2e;color:var(--text);border-color:var(--border)">
             <option value="__admin__">👤 Administrateur</option>
           </select>
           <div class="fb-type-row" id="fbTypeRow" style="flex:2;min-width:200px">
@@ -670,7 +691,12 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
           </div>
         </div>
         <textarea class="s-input" id="fbMessage" placeholder="Suggestion, problème ou idée…" style="min-height:70px;margin-bottom:8px"></textarea>
-        <div style="display:flex;justify-content:flex-end">
+        <div class="fb-img-preview" id="fbImgPreview"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <label class="btn-media" style="cursor:pointer;font-size:12px;padding:7px 12px" title="Joindre une image">
+            📎 Image
+            <input type="file" id="fbImgInput" accept="image/*" multiple style="display:none">
+          </label>
           <button class="btn-gold" id="fbSubmitBtn" style="font-size:12px;padding:9px 18px">📨 Envoyer</button>
         </div>
       </div>
@@ -865,6 +891,18 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
   </div>
 </div>
 
+<!-- Web Viewer fullscreen -->
+<div class="web-viewer" id="webViewer">
+  <div class="wv-bar">
+    <span style="font-size:14px">🌐</span>
+    <div class="wv-url" id="wvUrl"></div>
+    <button class="wv-btn" id="wvReload" title="Recharger">↺</button>
+    <button class="wv-btn" id="wvExternal" title="Ouvrir dans le navigateur">↗</button>
+    <button class="wv-btn danger" id="wvClose">✕ Fermer</button>
+  </div>
+  <iframe class="wv-frame" id="wvFrame" allow="fullscreen" referrerpolicy="no-referrer"></iframe>
+</div>
+
 <script>
 document.getElementById('restoreModalClose').addEventListener('click',()=>document.getElementById('restoreModal').classList.remove('open'));
 document.getElementById('restoreModal').addEventListener('click',e=>{if(e.target===document.getElementById('restoreModal'))document.getElementById('restoreModal').classList.remove('open')});
@@ -963,24 +1001,58 @@ function detectApps(url){
   return apps;
 }
 
+// ── Web Viewer ──
+let _wvCurrentUrl='';
+function openWebViewer(url){
+  _wvCurrentUrl=url;
+  document.getElementById('wvUrl').textContent=url;
+  document.getElementById('wvFrame').src=url;
+  document.getElementById('webViewer').classList.add('open');
+}
+document.getElementById('wvClose').addEventListener('click',()=>{
+  document.getElementById('webViewer').classList.remove('open');
+  document.getElementById('wvFrame').src='about:blank';
+});
+document.getElementById('wvReload').addEventListener('click',()=>{
+  document.getElementById('wvFrame').src=_wvCurrentUrl;
+});
+document.getElementById('wvExternal').addEventListener('click',()=>{
+  window.open(_wvCurrentUrl,'_blank');
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    if(document.getElementById('webViewer').classList.contains('open')){
+      document.getElementById('webViewer').classList.remove('open');
+      document.getElementById('wvFrame').src='about:blank';
+    }
+    if(document.getElementById('ceFullscreen').classList.contains('open')){
+      document.getElementById('ceFullscreen').classList.remove('open');
+    }
+  }
+});
+
 function openUrlWithAppChoice(url,label){
   const fullUrl=url.startsWith('http')?url:'https://'+url;
   const apps=detectApps(fullUrl);
+
+  // Pas d'app détectée → ouvrir dans le viewer intégré plein écran
   if(!apps.length){
-    // Pas d'app détectée → ouverture directe navigateur
-    window.open(fullUrl,'_blank');
+    openWebViewer(fullUrl);
     return;
   }
-  // Afficher le modal de choix
+
+  // Apps détectées → modal de choix
   document.getElementById('appOpenTitle').textContent='Ouvrir : '+(label||fullUrl);
   document.getElementById('appOpenUrl').textContent=fullUrl;
   const list=document.getElementById('appOpenList');
   list.innerHTML='';
-  // Option navigateur toujours présente
+
   const allChoices=[
     ...apps,
-    {name:'Navigateur',icon:'🌐',scheme:fullUrl,desc:'Ouvrir dans le navigateur',isBrowser:true}
+    {name:'Navigateur intégré',icon:'🖥️',desc:'Ouvrir en plein écran dans le portail',isViewer:true},
+    {name:'Navigateur externe',icon:'🌐',desc:'Ouvrir dans un nouvel onglet',isBrowser:true}
   ];
+
   allChoices.forEach(app=>{
     const item=document.createElement('div');item.className='app-open-item';
     item.innerHTML=`<div class="app-open-icon">${app.icon}</div>
@@ -988,19 +1060,23 @@ function openUrlWithAppChoice(url,label){
       <div style="color:var(--gold);font-size:14px">→</div>`;
     item.addEventListener('click',()=>{
       document.getElementById('appOpenModal').classList.remove('open');
-      if(app.isBrowser){window.open(fullUrl,'_blank');return;}
-      // Tenter l'ouverture dans l'app via le scheme
-      const iframe=document.createElement('iframe');
-      iframe.style.display='none';iframe.src=app.scheme;
-      document.body.appendChild(iframe);
-      // Fallback navigateur après 2s si l'app n'est pas installée
-      setTimeout(()=>{iframe.remove();},2000);
-      // Sur mobile, essayer aussi location.href
-      if(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){
-        setTimeout(()=>{window.location.href=app.scheme;},100);
-        setTimeout(()=>{window.open(fullUrl,'_blank');},1500);
+      if(app.isViewer){ openWebViewer(fullUrl); return; }
+      if(app.isBrowser){ window.open(fullUrl,'_blank'); return; }
+      // Tentative d'ouverture dans l'app native
+      const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if(isMobile){
+        // Tenter le scheme, fallback viewer après 2s
+        let opened=false;
+        window.addEventListener('blur',()=>{opened=true;},{once:true});
+        window.location.href=app.scheme;
+        setTimeout(()=>{
+          if(!opened) openWebViewer(fullUrl);
+        },1800);
       } else {
-        window.open(fullUrl,'_blank');
+        // Desktop : essayer le scheme via iframe caché, puis ouvrir le viewer
+        const fr=document.createElement('iframe');fr.style.display='none';fr.src=app.scheme;
+        document.body.appendChild(fr);
+        setTimeout(()=>{fr.remove();openWebViewer(fullUrl);},500);
       }
     });
     list.appendChild(item);
@@ -1160,6 +1236,7 @@ document.getElementById('confirmAdd').addEventListener('click',()=>{
   document.getElementById('addForm').classList.remove('open');
   document.getElementById('toggleAddForm').textContent='+ Ajouter un utilisateur';
   toast('Utilisateur ajouté');
+  populateFbUserSelect();
 });
 
 function clearAddForm(){
@@ -1260,6 +1337,7 @@ function renderUserList(){
         config.users[idx].pwd=pwd;
       }
       saveConfig(config);renderUserList();toast('Utilisateur mis à jour');
+      populateFbUserSelect();
     });
   });
   el.querySelectorAll('.del-btn').forEach(btn=>{
@@ -1267,6 +1345,7 @@ function renderUserList(){
       const u=config.users.find(x=>x.id===btn.dataset.id);if(!u)return;
       if(!confirm(`Supprimer "${u.name}" ?`))return;
       config.users=config.users.filter(x=>x.id!==u.id);saveConfig(config);renderUserList();toast('Utilisateur supprimé');
+      populateFbUserSelect();
     });
   });
 }
@@ -1684,7 +1763,7 @@ document.getElementById('cePlayFullBtn').addEventListener('click',()=>{
 });
 document.getElementById('ceClosePreview').addEventListener('click',()=>{document.getElementById('cePreviewCard').style.display='none';});
 
-// ── Plein écran ──
+// ── Code fullscreen ──
 let _ceFsCode='';
 document.getElementById('ceFullscreenBtn').addEventListener('click',()=>{
   const code=document.getElementById('ceEditor').value.trim();
@@ -1706,12 +1785,6 @@ document.getElementById('ceFsReload').addEventListener('click',()=>{
   const frame=document.getElementById('ceFsFrame');
   const doc=frame.contentDocument||frame.contentWindow.document;
   doc.open();doc.write(_ceFsCode);doc.close();
-});
-// Touche Escape pour fermer
-document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'&&document.getElementById('ceFullscreen').classList.contains('open')){
-    document.getElementById('ceFullscreen').classList.remove('open');
-  }
 });
 
 document.getElementById('ceSaveBtn').addEventListener('click',()=>{
@@ -1813,10 +1886,20 @@ function fbInitials(name){return name.split(' ').map(w=>w[0]).join('').toUpperCa
 
 function populateFbUserSelect(){
   const sel=document.getElementById('fbUserSelect');if(!sel)return;
+  // Sauvegarder la sélection actuelle
+  const prev=sel.value;
   sel.innerHTML='<option value="__admin__">👤 Administrateur</option>';
   (config.users||[]).forEach(u=>{
-    const o=document.createElement('option');o.value=u.id;o.textContent='👤 '+u.name;sel.appendChild(o);
+    const o=document.createElement('option');
+    o.value=u.id;
+    o.textContent=(u.starred?'⭐ ':'👤 ')+u.name;
+    o.style.color=u.color||'inherit';
+    sel.appendChild(o);
   });
+  // Restaurer la sélection si elle existe encore
+  if(prev&&sel.querySelector(`option[value="${prev}"]`)){
+    sel.value=prev;
+  }
 }
 
 function updateFbBadge(){
@@ -1854,6 +1937,7 @@ function renderFeedbacks(){
         <span class="fb-status ${f.status}" title="Cliquer pour changer" data-id="${f.id}">${statusLabel(f.status)}</span>
       </div>
       <div class="fb-message">${esc(f.message)}</div>
+      ${(f.images||[]).length?`<div class="fb-card-images">${(f.images||[]).slice(0,6).map(s=>`<img class="fb-card-img" src="${s}" alt="">`).join('')}${(f.images||[]).length>6?`<span style="font-size:10px;color:var(--muted);align-self:center">+${(f.images||[]).length-6}</span>`:''}</div>`:''}
       ${f.reply?`<div class="fb-reply"><div class="fb-reply-label">Réponse admin</div>${esc(f.reply)}</div>`:''}
       <div class="fb-actions">
         <button class="btn-ghost reply-toggle-btn" data-id="${f.id}" style="font-size:11px;padding:6px 11px">✏️ ${f.reply?'Modifier la réponse':'Répondre'}</button>
@@ -1867,6 +1951,10 @@ function renderFeedbacks(){
         </div>
       </div>`;
     list.appendChild(card);
+    // Lightbox sur les images des cartes
+    card.querySelectorAll('.fb-card-img').forEach(img=>{
+      img.addEventListener('click',()=>openLightbox(img.src));
+    });
   });
 
   list.querySelectorAll('.fb-status').forEach(el=>{
@@ -1921,17 +2009,44 @@ document.querySelectorAll('.fb-btn').forEach(btn=>{
   });
 });
 
+// ── Feedback image upload ──
+let _fbPendingImages=[];
+
+document.getElementById('fbImgInput').addEventListener('change',async e=>{
+  const files=Array.from(e.target.files);
+  for(const f of files){
+    const b64=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result);r.readAsDataURL(f)});
+    _fbPendingImages.push(b64);
+  }
+  renderFbImgPreview();
+  e.target.value='';
+});
+
+function renderFbImgPreview(){
+  const wrap=document.getElementById('fbImgPreview');
+  wrap.innerHTML='';
+  _fbPendingImages.forEach((src,i)=>{
+    const w=document.createElement('div');w.className='fb-img-thumb-wrap';
+    const img=document.createElement('img');img.className='fb-img-thumb';img.src=src;
+    img.addEventListener('click',()=>openLightbox(src));
+    const del=document.createElement('button');del.className='fb-img-del';del.textContent='×';
+    del.addEventListener('click',()=>{_fbPendingImages.splice(i,1);renderFbImgPreview();});
+    w.appendChild(img);w.appendChild(del);wrap.appendChild(w);
+  });
+}
+
 // Submit
 document.getElementById('fbSubmitBtn').addEventListener('click',()=>{
   const msg=document.getElementById('fbMessage').value.trim();
-  if(!msg){toast('Rédigez votre retour avant d\'envoyer','err');return}
+  if(!msg&&!_fbPendingImages.length){toast('Rédigez votre retour avant d\'envoyer','err');return}
   const selEl=document.getElementById('fbUserSelect');
   const userId=selEl.value;
   let userName='Administrateur';
   if(userId!=='__admin__'){const u=config.users.find(x=>x.id===userId);if(u)userName=u.name;}
-  feedbacks.unshift({id:uid(),userId,userName,type:fbSelectedType,message:msg,status:'nouveau',created:Date.now(),reply:''});
+  feedbacks.unshift({id:uid(),userId,userName,type:fbSelectedType,message:msg,images:_fbPendingImages.slice(),status:'nouveau',created:Date.now(),reply:''});
   saveFeedbacks(feedbacks);
   document.getElementById('fbMessage').value='';
+  _fbPendingImages=[];renderFbImgPreview();
   renderFeedbacks();updateFbBadge();
   toast('✅ Retour envoyé — merci !');
 });
