@@ -788,7 +788,7 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
           <button class="btn-ghost" id="ceClosePreview" style="font-size:11px;padding:5px 10px">✕ Fermer</button>
         </div>
       </div>
-      <iframe id="cePreviewFrame" class="ce-preview-frame ce-preview-open" style="min-height:320px" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"></iframe>
+      <iframe id="cePreviewFrame" class="ce-preview-frame ce-preview-open" style="min-height:320px" allowfullscreen></iframe>
     </div>
 
     <!-- Codes sauvegardés -->
@@ -885,7 +885,7 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
       <button class="ce-fs-btn" id="ceFsClose">✕ Fermer</button>
     </div>
   </div>
-  <iframe class="ce-fs-frame" id="ceFsFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"></iframe>
+  <iframe class="ce-fs-frame" id="ceFsFrame" allowfullscreen></iframe>
 </div>
 
 <!-- App Open Modal -->
@@ -1842,17 +1842,22 @@ document.getElementById('ceClosePreview').addEventListener('click',()=>{document
 let _ceFsCode='';
 
 function ceWriteFrame(frame, code){
-  // Blob URL : fonctionne partout, contourne les restrictions de sécurité
+  // srcdoc : méthode native, synchrone, fonctionne partout sans restriction d'origine
+  try{
+    frame.removeAttribute('src');
+    frame.srcdoc = code;
+    return;
+  }catch(e){}
+  // Fallback : blob URL (nécessite que l'iframe ne soit pas sandboxée)
   try{
     const blob = new Blob([code], {type:'text/html;charset=utf-8'});
     const burl = URL.createObjectURL(blob);
-    frame.onload = ()=>{ URL.revokeObjectURL(burl); frame.onload=null; };
+    const cleanup = ()=>{ URL.revokeObjectURL(burl); frame.removeEventListener('load',cleanup); };
+    frame.addEventListener('load', cleanup, {once:true});
     frame.src = burl;
     return;
   }catch(e){}
-  // Fallback srcdoc
-  try{ frame.srcdoc = code; return; }catch(e){}
-  // Fallback doc.write
+  // Dernier recours : document.write
   try{
     const doc = frame.contentDocument || frame.contentWindow.document;
     doc.open(); doc.write(code); doc.close();
@@ -1865,12 +1870,8 @@ document.getElementById('ceFullscreenBtn').addEventListener('click',()=>{
   _ceFsCode=code;
   const title=document.getElementById('ceTitleInput').value||'Lecteur';
   document.getElementById('ceFullscreenTitle').textContent='▶ '+title;
-  // Afficher le conteneur D'ABORD, sinon le navigateur refuse de charger l'iframe cachée
   document.getElementById('ceFullscreen').classList.add('open');
-  // Écrire dans l'iframe APRÈS qu'elle soit visible (requestAnimationFrame garantit le rendu)
-  requestAnimationFrame(()=>{
-    ceWriteFrame(document.getElementById('ceFsFrame'),code);
-  });
+  ceWriteFrame(document.getElementById('ceFsFrame'),code);
 });
 document.getElementById('ceFsClose').addEventListener('click',()=>{
   document.getElementById('ceFullscreen').classList.remove('open');
