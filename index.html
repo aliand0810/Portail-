@@ -837,6 +837,10 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
       <div class="card-title">Google Drive</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:1rem">Synchronisation des données sur votre Google Drive. <a href="https://console.cloud.google.com/" target="_blank" style="color:var(--info)">Console Google →</a></div>
       <div class="edit-grid">
+        <div class="full"><label class="s-label">Adresse Gmail (connexion automatique)</label>
+          <input type="email" class="s-input" id="gDriveEmail" placeholder="votre.adresse@gmail.com" style="font-size:13px">
+          <div style="font-size:11px;color:var(--dim);margin-top:4px">💡 Pré-remplissage automatique à la connexion Drive</div>
+        </div>
         <div class="full"><label class="s-label">Client ID OAuth 2.0</label><input type="text" class="s-input" id="gClientId" placeholder="123….apps.googleusercontent.com" style="font-size:12px;font-family:monospace"></div>
         <div class="full"><label class="s-label">API Key</label><input type="text" class="s-input" id="gApiKey" placeholder="AIza…" style="font-size:12px;font-family:monospace"></div>
       </div>
@@ -856,6 +860,12 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
         <div class="drive-folder-row" style="margin-top:8px">
           <input type="text" id="driveNewFolderInput" class="s-input" placeholder="Nom du nouveau dossier…" style="font-size:12px">
           <button class="btn-gold" id="driveNewFolder" style="padding:9px 14px;font-size:11px">+ Créer</button>
+        </div>
+        <div style="margin-top:10px;padding:10px 12px;background:rgba(201,168,76,.05);border:1px solid rgba(201,168,76,.15);border-radius:var(--rs)">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--muted)">
+            <input type="checkbox" id="driveVersioning" style="accent-color:var(--gold);width:14px;height:14px">
+            <span>Conserver les <strong style="color:var(--text)">10 dernières versions</strong> (au lieu d'écraser le fichier)</span>
+          </label>
         </div>
         <div id="driveFolderStatus" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
       </div>
@@ -920,7 +930,7 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();_pwaPrompt=
 
 // ══ STORAGE ══
 const SK='portail_v3', NK='portail_notes_v1';
-function loadConfig(){try{return JSON.parse(localStorage.getItem(SK))||{adminPwd:'admin123',users:[],apiKey:'',gClientId:'',gApiKey:'',driveFolderId:'',driveFolderName:'',aiModel:'gpt-4o-mini',nextMatricule:1}}catch{return{adminPwd:'admin123',users:[],apiKey:'',gClientId:'',gApiKey:'',driveFolderId:'',driveFolderName:'',aiModel:'gpt-4o-mini',nextMatricule:1}}}
+function loadConfig(){try{return JSON.parse(localStorage.getItem(SK))||{adminPwd:'admin123',users:[],apiKey:'',gClientId:'',gApiKey:'',gDriveEmail:'',driveFolderId:'',driveFolderName:'',driveVersioning:false,aiModel:'gpt-4o-mini',nextMatricule:1}}catch{return{adminPwd:'admin123',users:[],apiKey:'',gClientId:'',gApiKey:'',gDriveEmail:'',driveFolderId:'',driveFolderName:'',driveVersioning:false,aiModel:'gpt-4o-mini',nextMatricule:1}}}
 function saveConfig(c){localStorage.setItem(SK,JSON.stringify(c))}
 function loadNotes(){try{return JSON.parse(localStorage.getItem(NK))||[]}catch{return[]}}
 function saveNotes(n){localStorage.setItem(NK,JSON.stringify(n))}
@@ -1129,6 +1139,8 @@ function doLogin(){
     document.getElementById('gClientId').value=config.gClientId||'';
     document.getElementById('gApiKey').value=config.gApiKey||'';
     document.getElementById('gConfigStatus').textContent=config.gClientId?'✓ Identifiants configurés':'';
+    const gde=document.getElementById('gDriveEmail');if(gde)gde.value=config.gDriveEmail||'';
+    const dv=document.getElementById('driveVersioning');if(dv)dv.checked=!!config.driveVersioning;
     showScreen('admin');document.getElementById('pwdInput').value='';
     if(!window._driveReady){window._driveReady=true;driveInit();}
     feedbacks=loadFeedbacks();updateFbBadge();
@@ -1241,6 +1253,8 @@ document.getElementById('saveApiKey').addEventListener('click',()=>{
 document.getElementById('saveGConfig').addEventListener('click',()=>{
   config.gClientId=document.getElementById('gClientId').value.trim();
   config.gApiKey=document.getElementById('gApiKey').value.trim();
+  const gde=document.getElementById('gDriveEmail');if(gde)config.gDriveEmail=gde.value.trim();
+  const dv=document.getElementById('driveVersioning');if(dv)config.driveVersioning=dv.checked;
   saveConfig(config);
   document.getElementById('gConfigStatus').textContent=config.gClientId?'✓ Enregistré — reconnectez Drive':'';
   toast('Configuration Google Drive enregistrée','info');
@@ -2254,6 +2268,8 @@ function triggerAutoSave(){
       return;
     }
     localStorage.setItem('gdrive_client_id',clientId);
+    // Email pré-enregistré pour la connexion automatique
+    const loginHint=(config.gDriveEmail||localStorage.getItem('gdrive_email')||'').trim();
     _gdUpdateStatusBar(false,'Google Drive — Connexion…');
 
     async function onTokenReceived(accessToken){
@@ -2267,6 +2283,9 @@ function triggerAutoSave(){
         }).then(r=>r.json());
         _gdUserEmail=info.email||'';
         localStorage.setItem('gdrive_email',_gdUserEmail);
+        // Mémoriser l'email pour les prochaines connexions
+        if(_gdUserEmail&&!config.gDriveEmail){config.gDriveEmail=_gdUserEmail;saveConfig(config);}
+        const gde=document.getElementById('gDriveEmail');if(gde&&!gde.value)gde.value=_gdUserEmail;
       }catch(e){}
       _gdUpdateUI(true);
       _gdUpdateStatusBar(true,'☁️ Drive connecté — '+(_gdUserEmail||'Connecté'));
@@ -2277,31 +2296,35 @@ function triggerAutoSave(){
       toast('✅ Google Drive connecté — '+_gdUserEmail,'info');
     }
 
-    // Stratégie 1 : GIS library
+    // Stratégie 1 : GIS library avec login_hint (connexion directe si email connu)
     try{
       await _gdLoadGIS();
+      const tokenParams={prompt:''};
+      if(loginHint) tokenParams.login_hint=loginHint;
       _gdTokenClient=google.accounts.oauth2.initTokenClient({
         client_id:clientId,
         scope:GD_SCOPE,
+        hint:loginHint||undefined,
         callback:async(resp)=>{
           if(resp.error){_gdUpdateStatusBar(false);toast('OAuth : '+resp.error,'err');return;}
           await onTokenReceived(resp.access_token);
         },
         error_callback:(err)=>{
           if(err&&err.type==='popup_closed'){_gdUpdateStatusBar(false);toast('Fenêtre fermée','info');}
-          else{_gdConnectPopup(clientId,onTokenReceived);}
+          else{_gdConnectPopup(clientId,loginHint,onTokenReceived);}
         }
       });
-      _gdTokenClient.requestAccessToken({prompt:''});
+      _gdTokenClient.requestAccessToken(tokenParams);
     }catch(e){
-      // GIS non dispo → popup natif
-      _gdConnectPopup(clientId,onTokenReceived);
+      _gdConnectPopup(clientId,loginHint,onTokenReceived);
     }
   };
 
-  function _gdConnectPopup(clientId,onSuccess){
+  function _gdConnectPopup(clientId,loginHint,onSuccess){
     const redirectUri=location.origin+location.pathname;
-    const params=new URLSearchParams({client_id:clientId,redirect_uri:redirectUri,response_type:'token',scope:GD_SCOPE,prompt:'select_account'});
+    const p={client_id:clientId,redirect_uri:redirectUri,response_type:'token',scope:GD_SCOPE,prompt:'select_account'};
+    if(loginHint) p.login_hint=loginHint;
+    const params=new URLSearchParams(p);
     const pw=520,ph=640,pl=Math.max(0,(screen.width-pw)/2),pt=Math.max(0,(screen.height-ph)/2);
     const popup=window.open('https://accounts.google.com/o/oauth2/v2/auth?'+params,'_blank','width='+pw+',height='+ph+',left='+pl+',top='+pt+',toolbar=0,menubar=0,location=1');
     if(!popup||popup.closed){_gdUpdateStatusBar(false);toast('Popup bloquée — autorisez les popups','err');return;}
@@ -2489,35 +2512,68 @@ function triggerAutoSave(){
       const fbData=(typeof feedbacks!=='undefined')?feedbacks:[];
       const snipData=(typeof snippets!=='undefined')?snippets:[];
       const payload=JSON.stringify({config,notes,feedbacks:fbData,snippets:snipData,savedAt:new Date().toISOString()},null,2);
-      const existingId=await _gdEnsureFile();
-      let fileId;
-      if(existingId){
-        await _gdFetch('https://www.googleapis.com/upload/drive/v3/files/'+existingId+'?uploadType=media',{
-          method:'PATCH',
-          headers:{'Content-Type':'application/json'},
-          body:payload
-        });
-        fileId=existingId;
-      }else{
-        const meta={name:'portail_backup.json',mimeType:'application/json'};
+      const useVersioning=config.driveVersioning||false;
+
+      if(useVersioning){
+        // Mode versionné : créer un nouveau fichier horodaté à chaque sauvegarde
+        const ts=new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+        const fname='portail_backup_'+ts+'.json';
+        const meta={name:fname,mimeType:'application/json'};
         if(_gdFolderId) meta.parents=[_gdFolderId];
         const form=new FormData();
         form.append('metadata',new Blob([JSON.stringify(meta)],{type:'application/json'}));
         form.append('file',new Blob([payload],{type:'application/json'}));
         const resp=await _gdFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{method:'POST',body:form});
         const d=await resp.json();
-        fileId=d.id;
+        _gdFileId=d.id;
+        // Nettoyage : garder seulement les 10 dernières versions
+        await _gdCleanOldVersions(10);
+      } else {
+        // Mode écrasement : un seul fichier portail_backup.json
+        const existingId=await _gdEnsureFile();
+        let fileId;
+        if(existingId){
+          await _gdFetch('https://www.googleapis.com/upload/drive/v3/files/'+existingId+'?uploadType=media',{
+            method:'PATCH',headers:{'Content-Type':'application/json'},body:payload
+          });
+          fileId=existingId;
+        }else{
+          const meta={name:'portail_backup.json',mimeType:'application/json'};
+          if(_gdFolderId) meta.parents=[_gdFolderId];
+          const form=new FormData();
+          form.append('metadata',new Blob([JSON.stringify(meta)],{type:'application/json'}));
+          form.append('file',new Blob([payload],{type:'application/json'}));
+          const resp=await _gdFetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{method:'POST',body:form});
+          const d=await resp.json();fileId=d.id;
+        }
+        _gdFileId=fileId;
       }
-      _gdFileId=fileId;
+
       const now=new Date().toISOString();
       localStorage.setItem('gdrive_last_save',now);
-      localStorage.setItem('gdrive_last_file',fileId);
       _gdUpdateStatusBar(true,'☁️ Drive connecté',now);
       await _gdCountFiles();
     }finally{
       _gdSaving=false;
       _gdShowSaving(false);
     }
+  }
+
+  // Nettoyer les vieilles versions (garder les N plus récentes)
+  async function _gdCleanOldVersions(keepCount){
+    try{
+      let q="name contains 'portail_backup' and trashed=false";
+      if(_gdFolderId) q+=" and '"+_gdFolderId+"' in parents";
+      const resp=await _gdFetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)+'&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=50');
+      const data=await resp.json();
+      const files=data.files||[];
+      if(files.length>keepCount){
+        const toDelete=files.slice(keepCount);
+        await Promise.all(toDelete.map(f=>
+          _gdFetch('https://www.googleapis.com/drive/v3/files/'+f.id,{method:'DELETE'}).catch(()=>{})
+        ));
+      }
+    }catch(e){}
   }
 
   // ---- Save Now (bouton) ----
