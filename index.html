@@ -573,6 +573,8 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
         <button class="btn-media" id="noteAddImage" title="Ajouter une image">📷 Image</button>
         <input type="file" id="noteImageInput" accept="image/*" style="display:none" multiple>
         <button class="btn-media" id="noteRecordAudio" title="Dicter une note audio">🎙️ <span id="recLabel">Dictée</span></button>
+        <button class="btn-media" id="noteDictateTranscribe" title="Dicter et transcrire en texte" style="background:rgba(139,92,246,.12);border-color:rgba(139,92,246,.25);color:#a78bfa">🎤 <span id="dictLabel">Dicter</span></button>
+        <button class="btn-media" id="noteReformulate" title="Reformuler le texte sélectionné avec l'IA" style="background:rgba(201,168,76,.08);border-color:rgba(201,168,76,.2);color:var(--gold)">✨ Reformuler</button>
       </div>
       <div style="margin-left:auto;display:flex;gap:7px;flex-wrap:wrap">
         <button class="btn-ghost" id="noteArchiveBtn">📥 Archiver</button>
@@ -642,21 +644,22 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
     </div>
     <button class="btn-logout" id="logoutBtn">Déconnexion</button>
   </div>
-  <!-- Drive status bar (second row) -->
-  <div id="driveBar" style="background:rgba(7,7,13,.88);border-bottom:1px solid var(--border);padding:.5rem 1.5rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-    <div class="drive-bar">
+  <!-- Drive status bar — épuré -->
+  <div id="driveBar" style="background:rgba(7,7,13,.92);border-bottom:1px solid var(--border);padding:.4rem 1.5rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-height:38px">
+    <!-- Statut gauche -->
+    <div style="display:flex;align-items:center;gap:7px">
       <div class="drive-led" id="driveLed"></div>
       <span id="driveStatus" style="font-size:11px;color:var(--muted)">Non connecté</span>
-      <span class="drive-email" id="driveEmail" style="display:none"></span>
-      <span class="drive-count" id="driveCount" style="display:none"></span>
+      <!-- Dernière sauvegarde — visible uniquement quand connecté -->
       <span id="gdrive-last-save-time" style="font-size:10px;color:var(--dim)"></span>
-      <div class="drive-saving" id="driveSaving"><div class="drive-saving-dot"></div>⏳ Sauvegarde…</div>
+      <div class="drive-saving" id="driveSaving" style="display:none"><div class="drive-saving-dot"></div><span style="font-size:10px;color:var(--gold)">Sauvegarde…</span></div>
     </div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;align-items:center">
-      <button class="btn-ghost" id="driveConnectBtn" style="font-size:11px;padding:6px 12px">🔗 Connecter Drive</button>
-      <button class="btn-gold"  id="driveSaveBtn"    style="font-size:11px;padding:6px 14px;display:none">☁️ Sauvegarder</button>
-      <button class="btn-ghost" id="driveLoadBtn"    style="font-size:11px;padding:6px 12px;display:none">📂 Restaurer…</button>
-      <button class="btn-danger" id="driveDisconnectBtn" style="font-size:11px;padding:6px 12px;display:none">Déconnecter</button>
+    <!-- Boutons droite -->
+    <div style="display:flex;gap:5px;margin-left:auto;align-items:center">
+      <button class="btn-ghost" id="driveConnectBtn" style="font-size:11px;padding:5px 11px">🔗 Connecter</button>
+      <button class="btn-gold"  id="driveSaveBtn"   style="font-size:11px;padding:5px 13px;display:none">☁️ Sauvegarder</button>
+      <button class="btn-ghost" id="driveLoadBtn"   style="font-size:11px;padding:5px 11px;display:none">📂 Restaurer</button>
+      <button class="btn-danger" id="driveDisconnectBtn" style="font-size:11px;padding:5px 10px;display:none">✕</button>
     </div>
   </div>
 
@@ -1801,7 +1804,114 @@ recBtn.addEventListener('click',async()=>{
   }catch(e){toast('Micro non disponible : '+e.message,'err')}
 });
 
-// ══ CODE EDITOR ══
+// ── Dictée → Transcription en texte (Web Speech API) ──
+(function(){
+  const btn=document.getElementById('noteDictateTranscribe');
+  const lbl=document.getElementById('dictLabel');
+  let recognition=null;
+  let isListening=false;
+
+  const SpeechRec=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SpeechRec){
+    btn.title='Transcription vocale non supportée par ce navigateur';
+    btn.style.opacity='.4';
+    btn.disabled=true;
+    return;
+  }
+
+  btn.addEventListener('click',()=>{
+    if(isListening){
+      recognition.stop();
+      return;
+    }
+    recognition=new SpeechRec();
+    recognition.lang='fr-FR';
+    recognition.interimResults=true;
+    recognition.continuous=true;
+    recognition.maxAlternatives=1;
+
+    let interim='';
+    const textarea=document.getElementById('noteContent');
+
+    recognition.onstart=()=>{
+      isListening=true;
+      btn.classList.add('recording');
+      lbl.innerHTML='<span class="rec-dot"></span> Stop';
+      toast('🎤 Transcription en cours…','info');
+    };
+
+    recognition.onresult=(e)=>{
+      interim='';
+      let final='';
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        const t=e.results[i][0].transcript;
+        if(e.results[i].isFinal) final+=t;
+        else interim+=t;
+      }
+      if(final){
+        const cur=textarea.value;
+        const sep=(cur&&!cur.endsWith(' ')&&!cur.endsWith('\n'))?' ':'';
+        textarea.value=cur+sep+final;
+        textarea.scrollTop=textarea.scrollHeight;
+      }
+    };
+
+    recognition.onerror=(e)=>{
+      toast('Erreur micro : '+e.error,'err');
+      stop();
+    };
+
+    recognition.onend=()=>{ stop(); };
+
+    function stop(){
+      isListening=false;
+      btn.classList.remove('recording');
+      lbl.textContent='Dicter';
+      if(recognition){try{recognition.stop();}catch(_){}}
+    }
+
+    recognition.start();
+  });
+})();
+
+// ── Reformuler avec l'IA ──
+document.getElementById('noteReformulate').addEventListener('click',async()=>{
+  const key=config.apiKey;
+  if(!key){toast('Configurez votre clé API 1min.AI dans Sécurité','err');return;}
+  const textarea=document.getElementById('noteContent');
+  // Utiliser le texte sélectionné ou tout le contenu
+  const start=textarea.selectionStart,end=textarea.selectionEnd;
+  const selected=textarea.value.substring(start,end).trim();
+  const text=selected||textarea.value.trim();
+  if(!text){toast('Aucun texte à reformuler','err');return;}
+  const isSelection=selected.length>0;
+  const model=config.aiModel||'gpt-4o-mini';
+  const prompt=`Reformule ce texte de façon claire, fluide et professionnelle, en conservant le sens et la langue d'origine. Réponds uniquement avec le texte reformulé, sans introduction ni explication :\n\n${text}`;
+
+  const btn=document.getElementById('noteReformulate');
+  btn.disabled=true;btn.style.opacity='.5';btn.textContent='✨ …';
+  try{
+    const res=await fetch('https://api.1min.ai/api/features',{method:'POST',
+      headers:{'Content-Type':'application/json','API-KEY':key},
+      body:JSON.stringify({type:'CHAT_WITH_AI',model,promptObject:{prompt,isMixed:false,webSearch:false}})
+    });
+    if(!res.ok) throw new Error('Erreur '+res.status);
+    const data=await res.json();
+    const reformulated=(data?.aiRecord?.aiRecordDetail?.resultObject?.[0]||data?.result||data?.response||'').trim();
+    if(!reformulated) throw new Error('Réponse vide');
+
+    if(isSelection){
+      // Remplacer la sélection uniquement
+      textarea.value=textarea.value.substring(0,start)+reformulated+textarea.value.substring(end);
+      textarea.setSelectionRange(start,start+reformulated.length);
+    } else {
+      textarea.value=reformulated;
+    }
+    textarea.focus();
+    toast('✅ Texte reformulé','info');
+  }catch(e){toast('Erreur IA : '+e.message,'err');}
+  finally{btn.disabled=false;btn.style.opacity='';btn.textContent='✨ Reformuler';}
+});
 const CEK='portail_snippets_v1';
 function loadSnippets(){try{return JSON.parse(localStorage.getItem(CEK))||[]}catch{return[]}}
 function saveSnippets(s){localStorage.setItem(CEK,JSON.stringify(s));if(typeof triggerAutoSave==='function')triggerAutoSave();}
@@ -2247,31 +2357,31 @@ function triggerAutoSave(){
 
   // ---- Status bar ----
   function _gdUpdateStatusBar(connected, label, time){
-    // LED
-    const led = document.getElementById('driveLed');
-    const st  = document.getElementById('driveStatus');
-    const tm  = document.getElementById('gdrive-last-save-time');
-    const isOnline = navigator.onLine;
+    const led=document.getElementById('driveLed');
+    const st =document.getElementById('driveStatus');
+    const tm =document.getElementById('gdrive-last-save-time');
     if(led){
       led.className='drive-led';
-      if(connected)      { led.classList.add('green'); }
-      else if(isOnline)  { led.classList.add('yellow'); }
-      else               { led.classList.add('red'); }
+      if(connected) led.classList.add('green');
+      else          led.classList.add(navigator.onLine?'yellow':'red');
     }
     if(st){
-      if(connected)      st.textContent = label||'☁️ Drive connecté';
-      else if(isOnline)  st.textContent = label||'● En ligne';
-      else               st.textContent = label||'● Hors ligne';
+      if(connected)          st.textContent='Drive connecté';
+      else if(navigator.onLine) st.textContent='Non connecté';
+      else                      st.textContent='Hors ligne';
     }
     if(tm){
-      if(time){
+      if(connected&&time){
         const d=new Date(time);
         const isToday=d.toDateString()===new Date().toDateString();
         const ds=isToday
           ? d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})
           : d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
-        tm.textContent=connected?'· Sauvegardé '+ds:'';
-      }else{ tm.textContent=''; }
+        tm.textContent='· Sauvegardé '+ds;
+        tm.style.color='var(--ok)';
+      } else {
+        tm.textContent='';
+      }
     }
   }
 
@@ -2282,7 +2392,8 @@ function triggerAutoSave(){
   window.addEventListener('offline', _gdUpdateNetworkStatus);
 
   function _gdShowSaving(show){
-    document.getElementById('driveSaving').classList.toggle('on',show);
+    const el=document.getElementById('driveSaving');
+    if(el) el.style.display=show?'flex':'none';
   }
 
   // ---- Load GIS dynamically (lazy — only on connect click) ----
