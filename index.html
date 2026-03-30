@@ -395,7 +395,17 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
 .note-matricule{font-size:9px;letter-spacing:.12em;font-family:monospace;color:var(--dim);background:rgba(255,255,255,.04);border:1px solid var(--border);padding:2px 6px;border-radius:4px;flex-shrink:0}
 
 /* ── DRAG HANDLE ── */
-.note-drag-handle{cursor:grab;color:var(--dim);font-size:14px;padding:2px 4px;border-radius:4px;transition:color .15s;line-height:1;user-select:none;flex-shrink:0}
+/* ── User drag & color ── */
+.user-item.dragging{opacity:.4;border-color:var(--gold)}
+.user-item.drag-over{border-color:var(--gold);background:var(--gold-dim)}
+.user-drag-handle{cursor:grab;color:var(--dim);font-size:16px;padding:4px 6px 4px 2px;line-height:1;user-select:none;flex-shrink:0;transition:color .15s}
+.user-drag-handle:hover{color:var(--muted)}
+.user-drag-handle:active{cursor:grabbing}
+.edit-color-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.edit-color-swatch{width:24px;height:24px;border-radius:6px;cursor:pointer;border:2.5px solid transparent;transition:transform .15s,border-color .15s;flex-shrink:0}
+.edit-color-swatch:hover{transform:scale(1.18)}
+.edit-color-swatch.selected{border-color:white;transform:scale(1.1)}
+.edit-color-custom{width:36px;height:24px;border-radius:6px;cursor:pointer;border:2px solid var(--border);padding:0;background:none;overflow:hidden}
 .note-drag-handle:hover{color:var(--muted);background:rgba(255,255,255,.05)}
 .note-card.dragging{opacity:.35;border:2px dashed var(--border2)}
 .note-card.drag-over{border:2px dashed var(--gold);background:var(--gold-dim)}
@@ -1400,6 +1410,7 @@ function renderUserList(){
       : '';
     item.innerHTML=`
       <div class="user-item-head">
+        <div class="user-drag-handle" draggable="false" title="Déplacer" data-id="${user.id}">⠿</div>
         <button class="star-btn${user.starred?' starred':''}" data-id="${user.id}" title="Marquer comme favori">${user.starred?'★':'☆'}</button>
         <div class="user-avatar" style="background:${bg};color:${user.color}">${init(user.name)}</div>
         <div class="user-info">
@@ -1426,6 +1437,13 @@ function renderUserList(){
               </div>`).join('')||'<div class="url-row"><input type="text" class="s-input" placeholder="https://…" style="flex:2"><input type="text" class="s-input" placeholder="Libellé" style="flex:1"><button class="url-del" onclick="this.closest(\'.url-row\').remove()">×</button></div>'}
             </div>
             <button class="url-add-btn" onclick="addEditUrl('${user.id}')">+ Ajouter une URL</button>
+          </div>
+          <div>
+            <label class="s-label">Couleur</label>
+            <div class="edit-color-row" id="ecr_${user.id}">
+              ${['#c9a84c','#5ab87e','#5b9bd5','#d96c6c','#a07ed1','#d97b3a','#3abcd9','#f472b6','#94a3b8','#34d399'].map(c=>`<div class="edit-color-swatch${user.color===c?' selected':''}" data-color="${c}" data-uid="${user.id}" style="background:${c}" title="${c}"></div>`).join('')}
+              <input type="color" class="edit-color-custom" id="ecc_${user.id}" value="${user.color||'#c9a84c'}" title="Couleur personnalisée">
+            </div>
           </div>
           <div>
             <label class="s-label">Favori</label>
@@ -1473,7 +1491,11 @@ function renderUserList(){
       rows.forEach(r=>{const ins=r.querySelectorAll('input');const h=(ins[0]?.value||'').trim();const l=(ins[1]?.value||'').trim()||h;if(h)urls.push({href:h,label:l})});
       if(!name){toast('Nom requis','err');return}
       const idx=config.users.findIndex(u=>u.id===id);if(idx===-1)return;
-      config.users[idx]={...config.users[idx],name,urls,starred};
+      // Récupérer la couleur sélectionnée
+      const selSwatch=document.querySelector(`#ecr_${id} .edit-color-swatch.selected`);
+      const colorInput=document.getElementById('ecc_'+id);
+      const newColor=selSwatch?selSwatch.dataset.color:(colorInput?colorInput.value:config.users[idx].color);
+      config.users[idx]={...config.users[idx],name,urls,starred,color:newColor};
       if(pwd){
         if(pwd===config.adminPwd||pwd==='Aliand081089'){toast('Mot de passe réservé','err');return}
         if(config.users.find((u,i)=>u.pwd===pwd&&i!==idx)){toast('Mot de passe déjà utilisé','err');return}
@@ -1481,6 +1503,56 @@ function renderUserList(){
       }
       saveConfig(config);renderUserList();toast('Utilisateur mis à jour');
       populateFbUserSelect();
+    });
+  });
+
+  // ── Sélecteur de couleur inline ──
+  el.querySelectorAll('.edit-color-swatch').forEach(sw=>{
+    sw.addEventListener('click',()=>{
+      const uid=sw.dataset.uid;
+      document.querySelectorAll(`#ecr_${uid} .edit-color-swatch`).forEach(s=>s.classList.remove('selected'));
+      sw.classList.add('selected');
+      const ci=document.getElementById('ecc_'+uid);if(ci)ci.value=sw.dataset.color;
+    });
+  });
+  el.querySelectorAll('.edit-color-custom').forEach(inp=>{
+    inp.addEventListener('input',()=>{
+      const uid=inp.id.replace('ecc_','');
+      document.querySelectorAll(`#ecr_${uid} .edit-color-swatch`).forEach(s=>s.classList.remove('selected'));
+    });
+  });
+
+  // ── Drag & Drop réorganisation ──
+  let dragSrc=null;
+  el.querySelectorAll('.user-item').forEach(item=>{
+    const handle=item.querySelector('.user-drag-handle');
+    handle.addEventListener('mousedown',()=>{ item.draggable=true; });
+    item.addEventListener('dragstart',e=>{
+      dragSrc=item;
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed='move';
+    });
+    item.addEventListener('dragend',()=>{
+      item.draggable=false;
+      item.classList.remove('dragging');
+      el.querySelectorAll('.user-item').forEach(i=>i.classList.remove('drag-over'));
+    });
+    item.addEventListener('dragover',e=>{
+      e.preventDefault();e.dataTransfer.dropEffect='move';
+      if(item!==dragSrc) item.classList.add('drag-over');
+    });
+    item.addEventListener('dragleave',()=>item.classList.remove('drag-over'));
+    item.addEventListener('drop',e=>{
+      e.preventDefault();
+      item.classList.remove('drag-over');
+      if(!dragSrc||dragSrc===item)return;
+      const srcId=dragSrc.dataset.id,tgtId=item.dataset.id;
+      const si=config.users.findIndex(u=>u.id===srcId);
+      const ti=config.users.findIndex(u=>u.id===tgtId);
+      if(si===-1||ti===-1)return;
+      const [moved]=config.users.splice(si,1);
+      config.users.splice(ti,0,moved);
+      saveConfig(config);renderUserList();
     });
   });
   el.querySelectorAll('.del-btn').forEach(btn=>{
