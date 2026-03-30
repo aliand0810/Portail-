@@ -2680,7 +2680,6 @@ function triggerAutoSave(){
   function _gdInit(){
     _gdUpdateStatusBar(false);
     _gdUpdateUI(false);
-    // Bouton Connecter
     const conBtn=document.getElementById('driveConnectBtn');
     if(conBtn) conBtn.addEventListener('click',window.gdriveConnect);
     const disBtn=document.getElementById('driveDisconnectBtn');
@@ -2695,57 +2694,93 @@ function triggerAutoSave(){
     if(nfBtn)  nfBtn.addEventListener('click',window.gdriveCreateFolder);
     const selEl=document.getElementById('driveFolderSelect');
     if(selEl)  selEl.addEventListener('change',window.gdriveOnFolderSelect);
-    // ── Reconnexion automatique silencieuse ──
-    if(localStorage.getItem('gdrive_connected')==='1'){
-      const savedClientId=localStorage.getItem('gdrive_client_id')||config.gClientId||'';
-      if(savedClientId){
-        _gdUpdateStatusBar(false,'☁️ Drive — Reconnexion…');
-        setTimeout(async()=>{
-          try{
-            await _gdLoadGIS();
-            _gdTokenClient=google.accounts.oauth2.initTokenClient({
-              client_id:savedClientId,
-              scope:GD_SCOPE,
-              callback:async(resp)=>{
-                if(resp.error){
-                  localStorage.removeItem('gdrive_connected');
-                  _gdUpdateStatusBar(false);
-                  // Ne pas afficher de toast — silencieux
-                  return;
-                }
-                _gdAccessToken=resp.access_token;
-                _gdConnected=true;
-                window._gdConnected=true;
-                _gdUserEmail=localStorage.getItem('gdrive_email')||'';
-                _gdUpdateUI(true);
-                _gdFolderId=localStorage.getItem('gdrive_folder_id')||config.driveFolderId||'';
-                _gdFolderName=localStorage.getItem('gdrive_folder_name')||'';
-                await _gdLoadFolders();
-                await _gdRestoreSavedFolder();
-                _gdUpdateStatusBar(true,'☁️ Drive connecté — '+(_gdUserEmail||''),localStorage.getItem('gdrive_last_save'));
-                // Sauvegarde auto immédiate si données modifiées depuis la dernière sauvegarde
-                const lastSave=localStorage.getItem('gdrive_last_save');
-                if(!lastSave||Date.now()-new Date(lastSave).getTime()>300000){
-                  setTimeout(()=>{if(_gdFolderId&&window.gdriveSaveNow)window.gdriveSaveNow();},2000);
-                }
-              },
-              error_callback:(err)=>{
-                // prompt:'' peut afficher une popup — si l'utilisateur annule, pas d'erreur fatale
-                if(err&&err.type==='popup_closed'){
-                  localStorage.removeItem('gdrive_connected');
-                  _gdUpdateStatusBar(false);
-                }
-              }
-            });
-            // Essayer d'abord sans prompt (silencieux)
-            _gdTokenClient.requestAccessToken({prompt:'none'});
-          }catch(e){
-            // GIS non dispo au démarrage — on marque comme non connecté mais on ne supprime pas les credentials
-            _gdUpdateStatusBar(false,'● En ligne — Drive non connecté');
+
+    // ── Connexion automatique ──
+    // Conditions : soit déjà connecté avant, soit Client ID configuré
+    const savedClientId=localStorage.getItem('gdrive_client_id')||config.gClientId||'';
+    if(!savedClientId) return; // Rien à faire sans Client ID
+
+    const wasPreviouslyConnected=localStorage.getItem('gdrive_connected')==='1';
+    const hasEmail=(config.gDriveEmail||localStorage.getItem('gdrive_email')||'').trim();
+
+    // On tente si : déjà connecté avant OU (Client ID + email configurés)
+    if(!wasPreviouslyConnected && !hasEmail) return;
+
+    _gdUpdateStatusBar(false,'☁️ Drive — Connexion automatique…');
+
+    setTimeout(async()=>{
+      try{
+        await _gdLoadGIS();
+
+        // Callback partagé succès
+        async function onAutoSuccess(resp){
+          if(resp.error){
+            // prompt:none échoue → essayer avec login_hint seulement si email connu
+            if(hasEmail && resp.error==='user_logged_out'){
+              _gdUpdateStatusBar(false,'☁️ Drive — Cliquez pour connecter');
+              return;
+            }
+            if(resp.error==='access_denied'||resp.error==='immediate_failed'){
+              // Token expiré ou pas de session active → pas de popup, juste indiquer
+              _gdUpdateStatusBar(false,'● Connecter Drive →');
+              return;
+            }
+            localStorage.removeItem('gdrive_connected');
+            _gdUpdateStatusBar(false);
+            return;
           }
-        },2000);
+          _gdAccessToken=resp.access_token;
+          _gdConnected=true;
+          window._gdConnected=true;
+          localStorage.setItem('gdrive_connected','1');
+          _gdUserEmail=localStorage.getItem('gdrive_email')||config.gDriveEmail||'';
+          // Vérifier l'email réel
+          try{
+            const info=await fetch('https://www.googleapis.com/oauth2/v2/userinfo',{
+              headers:{Authorization:'Bearer '+_gdAccessToken}
+            }).then(r=>r.json());
+            _gdUserEmail=info.email||_gdUserEmail;
+            localStorage.setItem('gdrive_email',_gdUserEmail);
+            if(_gdUserEmail&&!config.gDriveEmail){config.gDriveEmail=_gdUserEmail;saveConfig(config);}
+          }catch(e){}
+          _gdUpdateUI(true);
+          _gdFolderId=localStorage.getItem('gdrive_folder_id')||config.driveFolderId||'';
+          _gdFolderName=localStorage.getItem('gdrive_folder_name')||'';
+          await _gdLoadFolders();
+          await _gdRestoreSavedFolder();
+          _gdUpdateStatusBar(true,'☁️ Drive connecté — '+(_gdUserEmail||''),localStorage.getItem('gdrive_last_save'));
+          // Email dans la barre
+          const em=document.getElementById('driveEmail');
+          if(em){em.textContent=_gdUserEmail;em.style.display='';}
+          // Sauvegarde si nécessaire
+          const lastSave=localStorage.getItem('gdrive_last_save');
+          if(!lastSave||Date.now()-new Date(lastSave).getTime()>300000){
+            setTimeout(()=>{if(_gdFolderId&&window.gdriveSaveNow)window.gdriveSaveNow();},3000);
+          }
+        }
+
+        const loginHint=hasEmail;
+        const tokenCfg={
+          client_id:savedClientId,
+          scope:GD_SCOPE,
+          callback:onAutoSuccess,
+          error_callback:(err)=>{
+            // Ne pas afficher de popup automatiquement — juste indiquer
+            _gdUpdateStatusBar(false,'● Connecter Drive →');
+          }
+        };
+        if(loginHint) tokenCfg.hint=loginHint;
+        _gdTokenClient=google.accounts.oauth2.initTokenClient(tokenCfg);
+
+        // prompt:'none' = totalement silencieux, échoue si pas de session Google active
+        const reqParams={prompt:'none'};
+        if(loginHint) reqParams.login_hint=loginHint;
+        _gdTokenClient.requestAccessToken(reqParams);
+
+      }catch(e){
+        _gdUpdateStatusBar(false,'● En ligne');
       }
-    }
+    },1500);
   }
 
   // Exposer init
