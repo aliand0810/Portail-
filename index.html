@@ -1814,61 +1814,60 @@ recBtn.addEventListener('click',async()=>{
   const SpeechRec=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SpeechRec){
     btn.title='Transcription vocale non supportée par ce navigateur';
-    btn.style.opacity='.4';
-    btn.disabled=true;
-    return;
+    btn.style.opacity='.4';btn.disabled=true;return;
+  }
+
+  function stopRecognition(){
+    isListening=false; // ← En premier pour bloquer le redémarrage dans onend
+    btn.classList.remove('recording');
+    lbl.textContent='Dicter';
+    if(recognition){try{recognition.stop();}catch(_){}recognition=null;}
   }
 
   btn.addEventListener('click',()=>{
-    if(isListening){
-      recognition.stop();
-      return;
-    }
+    // Si déjà en cours → STOP
+    if(isListening){stopRecognition();return;}
+
+    const textarea=document.getElementById('noteModalBody');
+    if(!textarea){toast('Ouvrez une note pour dicter','err');return;}
+
     recognition=new SpeechRec();
     recognition.lang='fr-FR';
-    recognition.interimResults=true;
+    recognition.interimResults=false; // Uniquement les résultats finaux
     recognition.continuous=true;
     recognition.maxAlternatives=1;
-
-    let interim='';
-    const textarea=document.getElementById('noteContent');
 
     recognition.onstart=()=>{
       isListening=true;
       btn.classList.add('recording');
       lbl.innerHTML='<span class="rec-dot"></span> Stop';
-      toast('🎤 Transcription en cours…','info');
+      toast('🎤 Parlez… Cliquez à nouveau pour arrêter','info');
     };
 
     recognition.onresult=(e)=>{
-      interim='';
-      let final='';
       for(let i=e.resultIndex;i<e.results.length;i++){
-        const t=e.results[i][0].transcript;
-        if(e.results[i].isFinal) final+=t;
-        else interim+=t;
-      }
-      if(final){
-        const cur=textarea.value;
-        const sep=(cur&&!cur.endsWith(' ')&&!cur.endsWith('\n'))?' ':'';
-        textarea.value=cur+sep+final;
-        textarea.scrollTop=textarea.scrollHeight;
+        if(e.results[i].isFinal){
+          const word=e.results[i][0].transcript;
+          const cur=textarea.value;
+          const sep=(cur&&!cur.endsWith(' ')&&!cur.endsWith('\n'))?' ':'';
+          textarea.value=cur+sep+word;
+          textarea.scrollTop=textarea.scrollHeight;
+        }
       }
     };
 
     recognition.onerror=(e)=>{
+      if(e.error==='no-speech') return; // Pause normale, on continue
       toast('Erreur micro : '+e.error,'err');
-      stop();
+      stopRecognition();
     };
 
-    recognition.onend=()=>{ stop(); };
-
-    function stop(){
-      isListening=false;
-      btn.classList.remove('recording');
-      lbl.textContent='Dicter';
-      if(recognition){try{recognition.stop();}catch(_){}}
-    }
+    recognition.onend=()=>{
+      // Redémarrer seulement si toujours en écoute (pause naturelle)
+      if(isListening){
+        try{recognition.start();}catch(_){stopRecognition();}
+      }
+    };
 
     recognition.start();
   });
@@ -1878,7 +1877,7 @@ recBtn.addEventListener('click',async()=>{
 document.getElementById('noteReformulate').addEventListener('click',async()=>{
   const key=config.apiKey;
   if(!key){toast('Configurez votre clé API 1min.AI dans Sécurité','err');return;}
-  const textarea=document.getElementById('noteContent');
+  const textarea=document.getElementById('noteModalBody');
   // Utiliser le texte sélectionné ou tout le contenu
   const start=textarea.selectionStart,end=textarea.selectionEnd;
   const selected=textarea.value.substring(start,end).trim();
