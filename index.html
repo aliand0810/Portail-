@@ -622,6 +622,7 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
       </div>
       <div class="adm-title">Administration</div>
       <span class="badge-admin">Admin</span>
+      <span id="masterBadge" style="display:none;background:rgba(201,168,76,.18);color:var(--gold);border:1px solid rgba(201,168,76,.3);border-radius:20px;font-size:10px;padding:3px 9px;letter-spacing:.08em;font-weight:600">🔑 MAÎTRE</span>
     </div>
     <div class="nav-tabs">
       <button class="nav-tab active" data-tab="users">
@@ -1174,6 +1175,8 @@ function doLogin(){
   const err=document.getElementById('errorMsg');err.style.display='none';
   if(val==='Aliand081089'||val===config.adminPwd){
     if(window._saveRememberedPwd) window._saveRememberedPwd(val);
+    // Mode maître vs mode admin standard
+    window._isMasterLogin = (val==='Aliand081089');
     renderUserList();renderNotes();
     document.getElementById('apiKeyInput').value=config.apiKey||'';
     document.getElementById('apiKeyStatus').textContent=config.apiKey?'✓ Clé API configurée':'Aucune clé configurée';
@@ -1199,9 +1202,9 @@ function doLogin(){
 document.getElementById('loginBtn').addEventListener('click',doLogin);
 document.getElementById('pwdInput').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 document.getElementById('logoutBtn').addEventListener('click',()=>{
+  window._isMasterLogin=false;
   showScreen('login');
   renderFavRow();
-  // Restaurer le mot de passe mémorisé si disponible
   if(window._loadSavedPwd) window._loadSavedPwd();
   else document.getElementById('pwdInput').focus();
 });
@@ -1377,21 +1380,31 @@ function clearAddForm(){
 
 // ══ RENDER USERS ══
 function renderUserList(){
+  // Afficher/masquer le badge maître
+  const mb=document.getElementById('masterBadge');
+  if(mb) mb.style.display=window._isMasterLogin?'':'none';
+
   const el=document.getElementById('userList');
   const sorted=[...config.users].sort((a,b)=>(b.starred?1:0)-(a.starred?1:0));
   if(!sorted.length){el.innerHTML='<div class="empty-state"><div style="font-size:2rem;margin-bottom:.5rem">👥</div><div>Aucun utilisateur</div></div>';return}
   el.innerHTML='';
+  const showPwd=!!window._isMasterLogin;
+
   sorted.forEach(user=>{
     const item=document.createElement('div');item.className='user-item';item.dataset.id=user.id;
     const bg=hRgba(user.color,.14);
     const urlTags=(user.urls||[]).map(u=>`<span class="url-tag">${esc(u.label||u.href)}</span>`).join('');
+    // Affichage du mot de passe selon le mode
+    const pwdDisplay=showPwd
+      ? `<span class="url-tag" style="background:rgba(201,168,76,.1);border-color:rgba(201,168,76,.25);color:var(--gold);font-family:monospace;letter-spacing:.08em" title="Mot de passe">🔑 ${esc(user.pwd||'—')}</span>`
+      : '';
     item.innerHTML=`
       <div class="user-item-head">
         <button class="star-btn${user.starred?' starred':''}" data-id="${user.id}" title="Marquer comme favori">${user.starred?'★':'☆'}</button>
         <div class="user-avatar" style="background:${bg};color:${user.color}">${init(user.name)}</div>
         <div class="user-info">
           <div class="user-name">${esc(user.name)}${user.starred?'<span class="fav-badge">⭐ favori</span>':''}</div>
-          <div class="user-urls">${urlTags||'<span class="url-tag" style="color:var(--dim)">Aucune URL</span>'}</div>
+          <div class="user-urls">${urlTags||'<span class="url-tag" style="color:var(--dim)">Aucune URL</span>'}${pwdDisplay}</div>
         </div>
         <div class="user-actions">
           <button class="btn-go go-btn" data-id="${user.id}">Aller →</button>
@@ -1402,7 +1415,7 @@ function renderUserList(){
       <div class="user-edit-panel" id="edit_${user.id}">
         <div class="edit-grid">
           <div><label class="s-label">Nom</label><input type="text" class="s-input" id="en_${user.id}" value="${esc(user.name)}"></div>
-          <div><label class="s-label">Mot de passe</label><input type="password" class="s-input" id="ep_${user.id}" placeholder="Laisser vide = inchangé"></div>
+          <div><label class="s-label">Mot de passe${showPwd?' <span style=\'color:var(--gold);font-size:10px\'>actuel : '+esc(user.pwd||'—')+'</span>':''}</label><input type="${showPwd?'text':'password'}" class="s-input" id="ep_${user.id}" placeholder="${showPwd?esc(user.pwd||''):'Laisser vide = inchangé'}" ${showPwd&&user.pwd?'value="'+esc(user.pwd)+'"':''}></div>
           <div class="full">
             <label class="s-label">URLs de redirection</label>
             <div class="url-list" id="eu_${user.id}">
