@@ -343,6 +343,18 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
 .restore-arrow{color:var(--gold);font-size:16px;flex-shrink:0}
 .restore-loading{text-align:center;padding:2rem;color:var(--muted);font-size:13px}
 .restore-spinner{width:20px;height:20px;border:2px solid rgba(255,255,255,.1);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;display:inline-block;margin-bottom:.75rem}
+/* ── Restore preview modal ── */
+.rp-section{margin-bottom:14px}
+.rp-section-title{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid rgba(201,168,76,.15)}
+.rp-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rp-stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--rs);padding:10px 12px}
+.rp-stat-val{font-size:22px;font-weight:700;color:var(--text)}
+.rp-stat-label{font-size:10px;color:var(--muted);margin-top:2px}
+.rp-chip-wrap{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.rp-chip{background:var(--gold-dim);border:1px solid rgba(201,168,76,.2);border-radius:20px;padding:3px 10px;font-size:11px;color:var(--gold)}
+.rp-chip.blue{background:rgba(91,155,213,.12);border-color:rgba(91,155,213,.2);color:#5b9bd5}
+.rp-chip.green{background:rgba(90,184,126,.12);border-color:rgba(90,184,126,.2);color:#5ab87e}
+.rp-warn{background:rgba(224,82,82,.07);border:1px solid rgba(224,82,82,.18);border-radius:var(--rs);padding:10px 12px;font-size:12px;color:#e05252;margin-top:10px;display:flex;gap:8px;align-items:flex-start;line-height:1.5}
 .fb-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:1.25rem;flex-wrap:wrap}
 .fb-filter{display:flex;gap:3px;background:var(--surface);border:1px solid var(--border);border-radius:100px;padding:3px}
 .fb-btn{background:none;border:none;border-radius:100px;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:12px;padding:5px 12px;cursor:pointer;transition:all .2s}
@@ -572,15 +584,29 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
 </div>
 
 <!-- RESTORE PICKER MODAL -->
+<!-- Restore file list modal -->
 <div class="overlay" id="restoreModal">
-  <div class="modal-box" style="max-width:440px">
-    <div class="modal-title">📂 Choisir une sauvegarde</div>
-    <div class="modal-sub">Sélectionnez la version à restaurer. Les données locales seront remplacées.</div>
+  <div class="modal-box" style="max-width:480px">
+    <div class="modal-title">☁️ Sauvegardes Google Drive</div>
+    <div class="modal-sub">Cliquez sur une version pour voir les détails avant de restaurer.</div>
     <div class="restore-list" id="restoreList">
       <div class="restore-loading"><div class="restore-spinner"></div><br>Chargement des sauvegardes…</div>
     </div>
     <div style="text-align:right;margin-top:.5rem">
-      <button class="btn-ghost" id="restoreModalClose">Annuler</button>
+      <button class="btn-ghost" id="restoreModalClose">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Restore preview modal (details) -->
+<div class="overlay" id="restorePreviewModal">
+  <div class="modal-box" style="max-width:460px">
+    <div class="modal-title" id="rpTitle">📋 Détails de la restauration</div>
+    <div class="modal-sub" id="rpSub"></div>
+    <div id="rpBody" style="margin:1rem 0;max-height:55vh;overflow-y:auto"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:.5rem">
+      <button class="btn-ghost" id="rpCancelBtn">← Retour</button>
+      <button class="btn-gold" id="rpConfirmBtn">✅ Restaurer cette version</button>
     </div>
   </div>
 </div>
@@ -923,6 +949,18 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
 <script>
 document.getElementById('restoreModalClose').addEventListener('click',()=>document.getElementById('restoreModal').classList.remove('open'));
 document.getElementById('restoreModal').addEventListener('click',e=>{if(e.target===document.getElementById('restoreModal'))document.getElementById('restoreModal').classList.remove('open')});
+// Preview modal
+let _rpPendingFile=null;
+document.getElementById('rpCancelBtn').addEventListener('click',()=>{
+  document.getElementById('restorePreviewModal').classList.remove('open');
+  document.getElementById('restoreModal').classList.add('open');
+});
+document.getElementById('restorePreviewModal').addEventListener('click',e=>{if(e.target===document.getElementById('restorePreviewModal'))document.getElementById('restorePreviewModal').classList.remove('open');});
+document.getElementById('rpConfirmBtn').addEventListener('click',()=>{
+  if(!_rpPendingFile) return;
+  document.getElementById('restorePreviewModal').classList.remove('open');
+  window.gdriveRestoreFile(_rpPendingFile.id,_rpPendingFile.name,_rpPendingFile.data);
+});
 
 // ── PWA early capture ──
 let _pwaPrompt=null;
@@ -2586,61 +2624,124 @@ function triggerAutoSave(){
 
   // ---- Open Restore Modal ----
   window.gdriveOpenRestoreModal=async function(){
-    if(!_gdConnected){toast('⚠️ Connectez Drive d’abord','err');return;}
+    if(!_gdConnected){toast('Drive non connecté','err');return;}
     const modal=document.getElementById('restoreModal');
     const list=document.getElementById('restoreList');
     modal.classList.add('open');
     list.innerHTML='<div class="restore-loading"><div class="restore-spinner"></div><br>Chargement des sauvegardes…</div>';
     try{
-      let q="name='portail_backup.json' and trashed=false";
-      if(_gdFolderId) q+=" and '"+_gdFolderId+"' in parents";
+      let q="(name=\'portail_backup.json\' or name contains \'portail_backup_\') and trashed=false";
+      if(_gdFolderId) q+=" and \'"+_gdFolderId+"\' in parents";
       const resp=await _gdFetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)+'&fields=files(id,name,modifiedTime,size)&orderBy=modifiedTime desc&pageSize=50');
       const data=await resp.json();
       const files=data.files||[];
-      if(!files.length){list.innerHTML='<div class="restore-loading">Aucune sauvegarde trouvée.</div>';return;}
+      if(!files.length){list.innerHTML='<div class="restore-loading">Aucune sauvegarde trouvée dans ce dossier.</div>';return;}
       list.innerHTML='';
       files.forEach((f,idx)=>{
         const d=new Date(f.modifiedTime);
         const ds=d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
         const ts=d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
         const sz=f.size?Math.round(parseInt(f.size)/1024)+' ko':'';
+        const isLatest=idx===0;
         const item=document.createElement('div');item.className='restore-item';
-        item.innerHTML=`<div style="width:32px;height:32px;border-radius:8px;background:${idx===0?'var(--gold-dim)':'var(--surface2)'};display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">${idx===0?'⭐':'🕐'}</div>
-          <div style="flex:1;min-width:0"><div class="restore-item-date">${ds}</div><div class="restore-item-sub">${ts}${idx===0?' · Plus récente':''}${sz?' · '+sz:''}</div></div>
-          <div class="restore-arrow">→</div>`;
-        item.addEventListener('click',()=>{
-          if(!confirm('Restaurer la version du '+ds+' à '+ts+' ?\n\nLes données locales seront remplacées.')) return;
+        item.innerHTML=`
+          <div style="width:34px;height:34px;border-radius:9px;background:${isLatest?'var(--gold-dim)':'var(--surface2)'};display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">${isLatest?'⭐':'🕐'}</div>
+          <div style="flex:1;min-width:0">
+            <div class="restore-item-date">${ds}${isLatest?' <span style="font-size:10px;color:var(--gold);margin-left:5px">DERNIÈRE</span>':''}</div>
+            <div class="restore-item-sub">${ts}${sz?' · '+sz:''}</div>
+          </div>
+          <div style="font-size:11px;color:var(--muted);flex-shrink:0">Voir détails →</div>`;
+        item.addEventListener('click',async()=>{
           modal.classList.remove('open');
-          window.gdriveRestoreFile(f.id,f.name);
+          await _gdShowRestorePreview(f);
         });
         list.appendChild(item);
       });
     }catch(err){
-      list.innerHTML='<div class="restore-loading">Erreur : '+err.message+'</div>';
+      list.innerHTML='<div class="restore-loading">❌ Erreur : '+err.message+'</div>';
     }
   };
 
-  // ---- Restore file ----
-  window.gdriveRestoreFile=async function(fileId,fileName){
+  async function _gdShowRestorePreview(f){
+    const prevModal=document.getElementById('restorePreviewModal');
+    const body=document.getElementById('rpBody');
+    const sub=document.getElementById('rpSub');
+    const titleEl=document.getElementById('rpTitle');
+    const confirmBtn=document.getElementById('rpConfirmBtn');
+    confirmBtn.style.display='';
+    body.innerHTML='<div class="restore-loading"><div class="restore-spinner"></div><br>Analyse du fichier…</div>';
+    sub.textContent='';
+    prevModal.classList.add('open');
+    try{
+      const resp=await _gdFetch('https://www.googleapis.com/drive/v3/files/'+f.id+'?alt=media');
+      const data=JSON.parse(await resp.text());
+      _rpPendingFile={id:f.id,name:f.name,data};
+
+      const d=new Date(f.modifiedTime);
+      const ds=d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+      const ts=d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      titleEl.textContent='📋 Restauration — '+ds;
+      sub.textContent='Sauvegarde du '+ds+' à '+ts;
+
+      const users=(data.config&&data.config.users)||[];
+      const notesList=data.notes||[];
+      const fbList=data.feedbacks||[];
+      const snipList=data.snippets||[];
+
+      let html=`<div class="rp-section">
+          <div class="rp-section-title">📊 Résumé des données</div>
+          <div class="rp-grid">
+            <div class="rp-stat"><div class="rp-stat-val">${users.length}</div><div class="rp-stat-label">Utilisateurs</div></div>
+            <div class="rp-stat"><div class="rp-stat-val">${notesList.length}</div><div class="rp-stat-label">Notes IA</div></div>
+            <div class="rp-stat"><div class="rp-stat-val">${fbList.length}</div><div class="rp-stat-label">Retours</div></div>
+            <div class="rp-stat"><div class="rp-stat-val">${snipList.length}</div><div class="rp-stat-label">Snippets</div></div>
+          </div>
+        </div>`;
+
+      if(users.length){
+        html+=`<div class="rp-section"><div class="rp-section-title">👤 Utilisateurs</div><div class="rp-chip-wrap">${users.map(u=>`<span class="rp-chip">${esc(u.name||'?')}</span>`).join('')}</div></div>`;
+      }
+      if(notesList.length){
+        html+=`<div class="rp-section"><div class="rp-section-title">📝 Notes (${notesList.length})</div><div class="rp-chip-wrap">${notesList.slice(0,8).map(n=>`<span class="rp-chip blue">${esc((n.title||n.content||'Note').slice(0,26))}</span>`).join('')}${notesList.length>8?`<span class="rp-chip blue">+${notesList.length-8}</span>`:''}</div></div>`;
+      }
+      if(snipList.length){
+        html+=`<div class="rp-section"><div class="rp-section-title">💻 Snippets (${snipList.length})</div><div class="rp-chip-wrap">${snipList.slice(0,6).map(s=>`<span class="rp-chip green">${esc((s.title||'Code').slice(0,24))}</span>`).join('')}${snipList.length>6?`<span class="rp-chip green">+${snipList.length-6}</span>`:''}</div></div>`;
+      }
+      if(data.config&&(data.config.adminPwd||data.config.gClientId)){
+        html+=`<div class="rp-section"><div class="rp-section-title">🔒 Configuration</div><div style="font-size:12px;color:var(--muted)">Mot de passe admin · Client ID Drive · Clé API IA</div></div>`;
+      }
+      html+=`<div class="rp-warn">⚠️ <span>Cette restauration <strong>remplacera toutes vos données locales actuelles</strong>. L'action est irréversible.</span></div>`;
+      body.innerHTML=html;
+    }catch(e){
+      body.innerHTML='<div class="restore-loading">❌ Impossible de lire ce fichier : '+e.message+'</div>';
+      confirmBtn.style.display='none';
+    }
+  }
+
+  window.gdriveRestoreFile=async function(fileId,fileName,preloadedData){
     _gdShowSaving(true);
     try{
-      const resp=await _gdFetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media');
-      const text=await resp.text();
-      const data=JSON.parse(text);
+      let data=preloadedData;
+      if(!data){
+        const resp=await _gdFetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media');
+        data=JSON.parse(await resp.text());
+      }
       _gdRestoring=true;
       if(data.config){Object.assign(config,data.config);saveConfig(config);}
       if(data.notes){notes=data.notes;saveNotes(notes);}
       if(data.feedbacks){feedbacks=data.feedbacks;saveFeedbacks(feedbacks);}
       if(data.snippets){snippets=data.snippets;saveSnippets(snippets);}
-      renderUserList();renderNotes();
+      renderUserList();renderNotes();initFeedbackTab();
       document.getElementById('gClientId').value=config.gClientId||'';
       document.getElementById('gApiKey').value=config.gApiKey||'';
+      const gde=document.getElementById('gDriveEmail');if(gde)gde.value=config.gDriveEmail||'';
       setTimeout(()=>{_gdRestoring=false;},3000);
-      toast('✅ Restauré depuis "'+fileName+'"','info');
+      toast('✅ Restauré — '+fileName,'info');
     }catch(e){toast('❌ Erreur restauration : '+e.message,'err');}
     finally{_gdShowSaving(false);}
   };
 
+  
   // ---- Disconnect ----
   window.gdriveDisconnect=function(){
     _gdConnected=false;
