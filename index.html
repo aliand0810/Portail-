@@ -25,6 +25,45 @@
   --info:#5b9bd5;--info-bg:rgba(91,155,213,0.1);
   --r:16px;--rs:10px;
 }
+
+/* ══ MODE JOUR ══ */
+body.day-mode{
+  --bg:#f4f1eb;
+  --surface:rgba(255,255,255,0.85);
+  --surface2:rgba(0,0,0,0.04);
+  --border:rgba(0,0,0,0.10);
+  --border2:rgba(0,0,0,0.18);
+  --focus:rgba(180,130,40,0.45);
+  --gold:#a07530;--gold-l:#c9a84c;
+  --gold-dim:rgba(160,117,48,0.12);--gold-dim2:rgba(160,117,48,0.22);
+  --text:#1a1610;--muted:rgba(26,22,16,0.52);--dim:rgba(26,22,16,0.32);
+  --danger:#c0392b;--danger-bg:rgba(192,57,43,0.09);
+  --ok:#27ae60;--ok-bg:rgba(39,174,96,0.09);
+  --info:#2471a3;--info-bg:rgba(36,113,163,0.09);
+}
+body.day-mode::before{background:radial-gradient(ellipse 80% 60% at 20% 20%,rgba(201,168,76,.08) 0%,transparent 60%),radial-gradient(ellipse 60% 80% at 80% 80%,rgba(80,120,180,.05) 0%,transparent 60%)}
+body.day-mode::after{background-image:linear-gradient(rgba(0,0,0,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,0,0,.03) 1px,transparent 1px)}
+body.day-mode .adm-header{background:rgba(244,241,235,.95)}
+body.day-mode .modal-box{background:#fffdf7;border-color:var(--border2)}
+body.day-mode .s-input,body.day-mode select.s-input{background:rgba(0,0,0,.04)}
+body.day-mode select.s-input option{background:#fffdf7;color:var(--text)}
+body.day-mode .card{background:rgba(255,255,255,.9);box-shadow:0 1px 8px rgba(0,0,0,.06)}
+body.day-mode .restore-item{background:rgba(255,255,255,.9)}
+body.day-mode .web-viewer{background:#f8f6f0}
+body.day-mode .ce-preview-fullscreen{background:#f8f6f0}
+body.day-mode .ce-fs-bar{background:rgba(244,241,235,.97)}
+body.day-mode .ce-textarea{background:#1a1a2a;color:#c9d1d9} /* Éditeur code toujours sombre */
+body.day-mode #driveBar{background:rgba(244,241,235,.95)}
+body.day-mode .drive-led.green{box-shadow:0 0 6px rgba(39,174,96,.5)}
+body.day-mode .fb-card,.body.day-mode .user-item{background:rgba(255,255,255,.85)}
+body.day-mode .note-box{background:#fff;border-color:var(--border2)}
+body.day-mode .note-box-body textarea{background:rgba(0,0,0,.02)}
+
+/* ── Bouton thème ── */
+.theme-toggle{background:var(--surface);border:1px solid var(--border);border-radius:100px;color:var(--muted);font-size:15px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;flex-shrink:0;line-height:1}
+.theme-toggle:hover{border-color:var(--border2);color:var(--text);transform:scale(1.08)}
+/* Bouton fixe sur l'écran login */
+.theme-toggle-login{position:fixed;top:14px;right:16px;z-index:100}
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;line-height:1.6;overflow-x:hidden}
 body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse 80% 60% at 20% 20%,rgba(201,168,76,.06) 0%,transparent 60%),radial-gradient(ellipse 60% 80% at 80% 80%,rgba(80,60,180,.05) 0%,transparent 60%);pointer-events:none;z-index:0}
 body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(255,255,255,.015) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.015) 1px,transparent 1px);background-size:60px 60px;pointer-events:none;z-index:0}
@@ -449,6 +488,7 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
 
 <!-- LOGIN -->
 <div class="screen active" id="loginScreen">
+  <button class="theme-toggle theme-toggle-login" id="themeToggleLogin" title="Changer le thème">🌙</button>
   <div class="login-wrap">
     <div class="login-logo">
       <div class="logo-ring">
@@ -654,6 +694,7 @@ textarea.s-input{resize:vertical;min-height:90px;line-height:1.6}
       </button>
     </div>
     <button class="btn-logout" id="logoutBtn">Déconnexion</button>
+    <button class="theme-toggle" id="themeToggleAdmin" title="Changer le thème">🌙</button>
   </div>
   <!-- Drive status bar — épuré -->
   <div id="driveBar" style="background:rgba(7,7,13,.92);border-bottom:1px solid var(--border);padding:.4rem 1.5rem;display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-height:38px">
@@ -1209,7 +1250,39 @@ function doLogin(){
   err.style.display='block';err.style.animation='none';err.offsetHeight;err.style.animation='shake .4s ease';
   document.getElementById('pwdInput').value='';document.getElementById('pwdInput').focus();
 }
-document.getElementById('loginBtn').addEventListener('click',doLogin);
+// ══ THÈME JOUR / NUIT ══
+(function(){
+  const DAY_KEY='portail_day_mode';
+  const icons={night:'🌙',day:'☀️'};
+
+  function applyTheme(isDay){
+    document.body.classList.toggle('day-mode',isDay);
+    const icon=isDay?icons.day:icons.night;
+    const label=isDay?'Passer en mode nuit':'Passer en mode jour';
+    document.querySelectorAll('#themeToggleAdmin,#themeToggleLogin').forEach(btn=>{
+      if(btn){btn.textContent=icon;btn.title=label;}
+    });
+    localStorage.setItem(DAY_KEY,isDay?'1':'0');
+  }
+
+  function toggle(){
+    applyTheme(!document.body.classList.contains('day-mode'));
+  }
+
+  // Restaurer le thème au chargement
+  const saved=localStorage.getItem(DAY_KEY);
+  const preferDay=saved!==null?saved==='1':window.matchMedia('(prefers-color-scheme: light)').matches;
+  applyTheme(preferDay);
+
+  // Listeners
+  document.getElementById('themeToggleAdmin').addEventListener('click',toggle);
+  document.getElementById('themeToggleLogin').addEventListener('click',toggle);
+
+  // Synchroniser le changement si plusieurs onglets
+  window.addEventListener('storage',e=>{
+    if(e.key===DAY_KEY) applyTheme(e.newValue==='1');
+  });
+})();
 document.getElementById('pwdInput').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 document.getElementById('logoutBtn').addEventListener('click',()=>{
   window._isMasterLogin=false;
