@@ -1283,6 +1283,7 @@ function doLogin(){
     if(e.key===DAY_KEY) applyTheme(e.newValue==='1');
   });
 })();
+document.getElementById('loginBtn').addEventListener('click',doLogin);
 document.getElementById('pwdInput').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 document.getElementById('logoutBtn').addEventListener('click',()=>{
   window._isMasterLogin=false;
